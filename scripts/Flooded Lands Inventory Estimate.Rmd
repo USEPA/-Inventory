@@ -1,0 +1,1078 @@
+---
+title: "Flooded Lands Inventory Estimate"
+author: "J. Beaulieu"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    df_print: paged
+    toc: true
+    toc_float: true
+    fig_caption: yes
+    depth: 2
+    number_sections: true
+    code_folding:  hide
+editor_options: 
+  chunk_output_type: console
+---
+
+## Setup
+
+Load libraries and print session info to facilitate reproducibility.
+```{r setup, message=FALSE, warning=FALSE}
+# increase java memory for writing to excel
+# This must be run before any packages are loaded.  If workspace is loaded when
+# project is opended, then this command won't work and loadWorkbook() will 
+# fail.  Must populate working environment from scratch every session.
+#https://stackoverflow.com/questions/21937640/handling-java-lang-outofmemoryerror-when-writing-to-excel-from-r
+#https://stackoverflow.com/questions/27153974/how-to-fix-outofmemoryerror-java-gc-overhead-limit-exceeded-in-r
+
+# options(java.parameters = "-Xmx1024m") #"-Xmx1024m" worked once
+# 
+# library(tidyverse)
+# library(sf)
+# library(USAboundaries)
+# library(lwgeom)
+# library(xlsx)
+# 
+# 
+# 
+# # Print R session info
+# print(sessionInfo())
+```
+
+
+## Flooded Lands Data Sources
+Flooded Lands in the US are derived from the [U.S. Army Corps of Engineers National Inventory of Dams](https://nid.sec.usace.army.mil/ords/f?p=105:1::::::), Navigable Waterways dataset maintained by the Department of Homeland security, and the [National Hydrography Data (NHD)](https://www.usgs.gov/core-science-systems/ngp/national-hydrography) maintained by the USGS.  Several screening tools were used to discriminate natural water bodies from Flooded Lands in these data sets.
+
+
+Below we read in the layers created by Alex.  Layers are then combined into a single sf object.  A simple check shows that all rows were preserved in the merge.
+
+```{r, message=FALSE, warning=FALSE, results="hide"}
+
+#  read data from local sources
+# from US_Reservoirs3.gdb provided by Hall on 8/24/2021
+inund <- sf::st_read(paste0("C:\\Users\\JBEAULIE\\Environmental Protection Agency (EPA)\\",
+                            "SuRGE Survey of Reservoir Greenhouse gas Emissions - Documents\\",
+                            "surgeDsn\\nationalFloodedLandsMapping\\Reservoir Data\\US_Reservoirs3.gdb"),
+                     layer = "Inundation_Areas") %>%
+  st_transform(4269)
+
+# from Data.gdb provided by Alex on 1/10/2020
+nav <- sf::st_read(paste0("C:\\Users\\JBEAULIE\\Environmental Protection Agency (EPA)\\",
+                          "SuRGE Survey of Reservoir Greenhouse gas Emissions - Documents\\",
+                          "surgeDsn\\nationalFloodedLandsMapping\\Reservoir Data\\Data.gdb"),
+                   layer = "Navigable_Waterways") %>%
+  filter(FTYPE != "SeaOcean")
+st_crs(nav) #4269
+
+# from US_Reservoirs2.gdb provided by Hall on 8/12/2021
+res <- sf::st_read(paste0("C:\\Users\\JBEAULIE\\Environmental Protection Agency (EPA)\\",
+                            "SuRGE Survey of Reservoir Greenhouse gas Emissions - Documents\\",
+                            "surgeDsn\\nationalFloodedLandsMapping\\Reservoir Data\\US_Reservoirs3.gdb"),
+                     layer = "Reservoirs_Update") %>%
+  st_transform(4269)
+
+
+# Total number of observations
+nrow(inund) + nrow(nav) + nrow(res) #54,708
+
+# combine spatial data object
+fl.sf <- dplyr::bind_rows(nav, inund, res) 
+nrow(fl.sf) #54708, all observations retained
+st_crs(fl.sf) #4269
+```
+
+## Flooded Lands By State
+Area is represented in a few different variables in the merged data object.  For consistency, area is recalculated for all polygons.  However, we also need to partition polygon area between states.  This is straightforward for polygons contained entirely within a state, but more complicated for intrastate polygons such as Mississippi River Pool 8 which crosses three state boundaries.  We need to preserve the original polygon area to choose the appropriate emission factor (pond vs reservoir), but need the state specific area for summing across states.  Same consideration when we intersect polygons with climate map.
+```{r, message=FALSE, warning=FALSE, results="hide"}
+# This object represents area in quite a few ways.  This probably reflects
+# the diversity of data sources merged to create this object.  
+names(fl.sf)[grepl(pattern = "area", x = names(fl.sf), ignore.case = TRUE)] # 12 different permutations!
+
+# Recalculate area and assign to new variable
+# This will represent area of original polygon, prior to be broken up by state 
+# and/or climate.  # This should be used to determine emission factor (pond vs reservoir). 
+fl.sf$area_ha_original <- st_area(fl.sf) %>% units::set_units(., ha) # get in hectares
+# compare recalculated and imported area values
+fl.sf %>% filter(COMID == 13335116) %>% # grab Mississippi Pool 8 
+  select(area_ha_original, Area_ha) # great, looks good!
+
+# remove other area related variables for simplicity
+area_names <- names(fl.sf)[grepl(pattern = "area", x = names(fl.sf), ignore.case = TRUE)] # all names with "area"
+area_names <- area_names[!(area_names == "area_ha_original")] # want to keep 'area_ha_original'
+fl.sf <- fl.sf %>% select(-area_names)
+
+
+# add state identifier to each waterbody.  Polygons that cross state boundaries
+# will be split into multipart polygons.  Inspect an intrastate polygon (pool 8)
+# before breaking into state specific section.
+fl.sf %>% filter(COMID == 13335116) # just one row
+fl.sf %>% filter(COMID == 13335116) %>% plot(., max.plot = 1) # preview geometry
+
+# get state boundary
+us <- us_states() %>% # get states map
+  # filter(name %in% c("Hawaii", "Alaska") %>% # I think we use all states and DC
+  st_transform(crs = 4269) # 4269, as above.  Not certain what warning is about.
+
+# Now intersect with state
+fl.sf <- sf::st_intersection(x = fl.sf, y = us)
+
+# Lets see what happened to Pool 8 polygon after intersecting with state
+fl.sf %>% filter(COMID == 13335116) # now we have three rows, one for each state
+fl.sf %>% filter(COMID == 13335116) %>% plot(., max.plot = 1) # overall geometry unchanged
+fl.sf %>% filter(COMID == 13335116) %>% select(name) %>% plot() # but we can see polygon by state!
+
+
+# Now that polygon is split by state, we need to recalculate area, but first,
+# lets intersect with climate which will further split up polygons.  See next section
+
+```
+
+## Flooded Lands Climate Zone
+IPCC emission factors are aggregated into six climate zones.  Below we assign aggregated climate zone classification to each polygon.  The original 12 IPCC climate zones were aggregated per Table 7A.2 in Lovelock et al. Flooded Lands Methodology.  See C:\Users\JBEAULIE\OneDrive - Environmental Protection Agency (EPA)\Profile\Documents\Documents\research\IPCC\methodology2019\methodology2019.Rproj for details.
+
+```{r}
+climate <- sf::st_read("inputData/climateMap", layer = "ipcc_zones_2017_names") %>%
+  select(fldd_zn) %>% # pull out Flooded Lands climate zone
+  rename(climate = fldd_zn) %>% # rename
+   st_transform(4269) # consistent with above
+
+plot(climate)
+
+# As with state, climate zones may further bisect polygons.  For example, COMID 120049697
+# is a Mississippi River impoundment spanning Iowa, Illinois, and Wisconsin.  It is also bisected by the
+# cool temperate and warm temperate moist climate zones.  Preview it now, then
+# see what happens after intersecting with climate
+fl.sf %>% filter(COMID == 120049697)
+
+# Add Flooded Lands climate zone info to each lake polygon
+fl.sf.c <- sf::st_intersection(x = fl.sf, y = climate)
+
+# ok, the intersection further divided the polygons.  Note that we don't yet
+# have an area estimate for the subdivided polygons.  That is coming below.
+fl.sf.c %>% filter(COMID == 120049697)
+```
+
+## Flooded Lands Area
+
+We calculated area of the original polygons (area_ha_original), but these polygons were split up by the intersection with state and climate.  Need to recalculate polygons areas.
+
+```{r}
+# Calculate area
+fl.sf.c$area_ha_new <- st_area(fl.sf.c) %>% units::set_units(., ha) # get in hectares
+
+# compare area_ha_original and area_ha_new
+fl.sf.c %>% filter(COMID == 13335116) %>% # grab Mississippi Pool 8 
+  select(name, area_ha_original, area_ha_new) # great, looks good!
+
+
+# this is a good example of how the new state specific polygon could be less
+# than 8 Ha, corresponding to pond emission factor, but original polygon was
+# much larger.  
+
+
+# can we do group-wise operations on the name feature of the multipart polygon?
+# YES!
+fl.sf.c %>% filter(COMID == 13335116) %>% group_by(name) %>% # group by state
+  summarise(total_area = sum(area_ha_new))
+
+# does it work when we combine single and multipart polygons? 
+# YES!
+fl.sf.c %>% filter(COMID %in% c(13335116, 120049647)) %>% #pool 8 + polygon in Minnesota
+                   group_by(name) %>% # group by state
+  summarise(total_area = sum(area_ha_new))
+
+
+```
+
+
+## Define Flooded Land Type (Freshwater Pond, Reservoir, Canal/Ditch)
+
+Per figure 7.2 in methodology, <8 ha is pond.  Canal/Ditch is derived from FTYPE value.
+
+```{r}
+# Define size threshold for ponds.
+# Probably best to remove the units attribute from the area variables.  The
+# attribute carries some overhead that can be confusing.
+class(fl.sf.c$area_ha_original) # units
+units(fl.sf.c$area_ha_original) <- NULL
+units(fl.sf.c$area_ha_new) <- NULL
+
+fl.sf.c <- fl.sf.c %>% mutate(type = ifelse(area_ha_original < 8,
+                                            "freshwater pond",
+                                            "reservoir"),
+                              type = ifelse(FTYPE == "CanalDitch", #get canals and ditches
+                                            "canals and ditches",
+                                            type))
+
+```
+
+
+## Set Up Time Series Infrastructure
+Emissions/removals must be calculated for each year in the time series.  Reservoir age is extracted from NID.  When age not available we assume > 20.
+
+```{r}
+# Need to calculate emission separately for each year in time series
+# Put copy of sf object into 31 separate list elements.  Each element represents
+# one calculation year.
+fl <- list(fl.sf.c, fl.sf.c, fl.sf.c, fl.sf.c, fl.sf.c, fl.sf.c, fl.sf.c,
+           fl.sf.c, fl.sf.c, fl.sf.c, fl.sf.c, fl.sf.c, fl.sf.c, fl.sf.c,
+           fl.sf.c, fl.sf.c, fl.sf.c, fl.sf.c, fl.sf.c, fl.sf.c, fl.sf.c,
+           fl.sf.c, fl.sf.c, fl.sf.c, fl.sf.c, fl.sf.c, fl.sf.c, fl.sf.c, 
+           fl.sf.c, fl.sf.c, fl.sf.c)
+           
+names(fl) <- 1990:2020 # name each list element
+
+# add calculation year as a column in each list element
+for (i in 1: length(fl)) { # do all elements simultaneously
+ fl[[i]]$calc_year = as.numeric(names(fl[i]))  
+}
+
+
+# Calculate waterbody age for each calculation year
+# More recent years should have more waterbodies due to recent construction.
+# First, how many records per list element now
+lapply(fl, function(x) nrow(x)) #55284 rows
+
+fl <- lapply(fl, function(x) # calculate age per calculation year
+  x %>% mutate(age = calc_year - YEAR_COMPLETED) %>%
+    # only keep reservoirs that existed in particular calc_year.  Lots
+    # of systems with no age info, lets keep all of those.
+  filter(age >= 0 | is.na(age)) %>% # removes years with negative age
+    mutate(lu = ifelse(age >= 20 | is.na(age), #if no age, then assume old
+                       "Flooded Land Remaining Flooded Land",
+                       "Land Converted to Flooded Land"))) 
+
+lapply(fl, function(x) nrow(x)) #55,284 in 2020, but only 54,824 in 1990. good
+unique(fl[[29]]$lu)
+table(fl[[29]]$lu)
+```
+
+## Emisssion and Removal Emission Factors
+
+IPCC default emission factors are based on Flooded Land age, Flooded Land size, and climate zone.  Flooded Lands greater than 20 years old are considered "Flooded Lands Remaining Flooded Lands", whereas Flooded Lands less than 20 years old are classified as "Lands Converted to Flooded Lands".  
+
+### Land Converted to Flooded Land
+#### Reservoirs
+The CH~4~ emission factor is greater for Land Converted to Flooded Land than for Flooded Lands Remaining Flooded Lands.  CO~2~ emissions are also estimated for this land use category, but not for Flooded Lands Remaining Flooded Lands.  Emission factors are dissagregated by the six major climate zones.
+
+#### Other Constructed Waterbodies
+No emission factors are provided for 'Other Constructed Waterbodies' in this land-use category.  IPCC guidance says to use Flooded Land Remaining Flooded Land values CH4 values.  IPCC guidance says to use use `Land Converted to Flooded Land - reservoirs` CO2 emission factors for freshwater pond CO2 emission factors, but provides no guidance for other constructed water bodies.
+
+### Flooded Land Remaining Flooded Land
+#### Reservoirs
+CO~2~ emissions are not estimated for Flooded Land Remaining Flooded Land.  CH~4~ emission factors are dissagregated by the six major climate zones present in the US.  
+
+#### Other Constructed Waterbodies
+Flooded Lands less than 8 Ha are classified as freshwater ponds for this inventory and have a single emission factor.  Canals and ditches are derived from NHD FTYPE and have a singe emission factor.  No downstream emissions for this category.
+
+## Calculate emissions
+###All polygons
+
+```{r}
+# Read in emission factors
+ef <- readxl::read_excel("inputData/defaultEmissionFactors.xlsx") %>%
+  select(type, lu, climate, co2.tonnes.ha.y, ch4.tonnes.ha.y)
+
+# record nrow of fl list prior to merge.  Should be identical after merge.
+n.row.prior <- lapply(fl, function(x) nrow(x)) %>% do.call("rbind",. )
+
+# Merge emission factors with each list element.  This takes a few minutes
+fl.e <- lapply(fl, function(x)
+  merge(x, ef))  
+
+# Make sure no records were lost during merge
+# LOOKS GOOD
+n.row.prior == lapply(fl.e, function(x) nrow(x)) %>% do.call("rbind",. )
+
+# Calculate emissions
+fl.e <- lapply(fl.e, function(x) {
+  x %>% mutate(co2.tonnes.y = area_ha_new * co2.tonnes.ha.y,
+               ch4.surface.tonnes.y = area_ha_new * ch4.tonnes.ha.y,
+               ch4.dn.tonnes.y = ifelse(type %in% c("freshwater pond", "canals and ditches"), # no DN for 'other'
+                                        0,
+                                        ch4.surface.tonnes.y * 0.09),
+               ch4.dn.tonnes.y = replace(ch4.dn.tonnes.y, FTYPE == "Inundation Area", 0), # dn from associated res, dont double count
+               ch4.total.tonnes.y = ch4.surface.tonnes.y + ch4.dn.tonnes.y)
+})
+
+
+
+```
+
+### Aggretate as needed
+#### Set up a few things
+```{r}
+# We want all states to have an area value for each type (res, pond, ditch), even
+# if the value is 0.  Create a full matrix of type by state for joining with area calculations.
+
+# 1. df of all states in our inventory
+state.names <- us %>% st_drop_geometry() %>% select(name) %>% 
+  filter(!(name %in% c("Hawaii", "Alaska", "Puerto Rico"))) # not in our inventory
+
+# 2. vector of unique 'type' values
+types <- lapply(fl.e, function(x) unique(x$type)) %>%
+  do.call("cbind", .) %>% as.vector(.) %>% unique()
+
+# 3. create full grid
+full.state.type.grid <- expand.grid(types, state.names$name) %>% 
+  rename(type = Var1, name = Var2) 
+
+```
+
+
+#### Flooded Land area
+
+##### Flooded Land Remaining Flooded Land Area by State and Type
+```{r}
+# Calculate area by state and type
+flrfl.area <- lapply(fl.e, function(x) {
+  # calculate area by state
+  x %>% 
+    st_drop_geometry() %>%
+    filter(lu == "Flooded Land Remaining Flooded Land") %>%
+    dplyr::group_by(type, name) %>% # including climate group creates >6000 rows across all years
+    summarize(area = sum(area_ha_new))  %>% # sum by group
+    full_join(.,full.state.type.grid) %>% # expand to include every state, even if area is NA (which means 0)
+    mutate(area = replace(area, is.na(area), 0)) %>% # replace NA with 0
+    arrange(type, name)
+})
+
+# append calculation year to the name of the area variable
+for (i in 1:length(flrfl.area)) { # for each list element
+  names(flrfl.area[[i]])[names(flrfl.area[[i]]) == "area"] = paste0("area", names(flrfl.area[i])) # combine "area" with list element name (which is calculation year)
+}
+
+# FLRFL area table
+flrfl.area.state.type <- flrfl.area %>% 
+  reduce(full_join) %>% # merge all elements of list into single df.
+  as.data.frame() # remove tibble stuff, messes with writing to excel
+```
+
+##### Land Converted to Flooded Land Area by State and Type
+```{r}
+# Calculate area by state and type
+lcfl.area <- lapply(fl.e, function(x) {
+  # calculate area by state
+  x %>% 
+    st_drop_geometry() %>%
+    filter(lu == "Land Converted to Flooded Land") %>%
+    dplyr::group_by(type, name) %>% # including climate group creates >6000 rows across all years
+    summarize(area = sum(area_ha_new))  %>% # sum by group
+    full_join(.,full.state.type.grid) %>% # expand to include every state, even if area is NA (which means 0)
+    mutate(area = replace(area, is.na(area), 0)) %>% # replace NA with 0
+    arrange(type, name)
+})
+
+# append calculation year to the name of the area variable
+for (i in 1:length(lcfl.area)) { # for each list element
+  names(lcfl.area[[i]])[names(lcfl.area[[i]]) == "area"] = paste0("area", names(lcfl.area[i])) # combine "area" with list element name (which is calculation year)
+}
+
+# LCFL area table
+lcfl.area.state.type <- lcfl.area %>% 
+  reduce(full_join) %>% # merge all elements of list into single df.
+  as.data.frame() # remove tibble stuff, messes with writing to excel
+
+# # Time series of LCFL area
+# # Reservoirs drop rapidly from 1990 - 2000
+# pivot_longer(lcfl.area.state.type, 
+#              cols = starts_with("area"),
+#              names_to = "year",
+#              values_to = "area") %>%
+#   mutate(year = as.numeric(substr(x = year, start = 5, stop = 8))) %>%
+#   group_by(year, type) %>%
+#   summarise(area = sum(area)) %>%
+#   ggplot(., aes(year, area)) +
+#   geom_point() +
+#   facet_wrap(~type)
+# 
+# # Driven mostly by North Dakota, Texas, and Missouri
+# pivot_longer(lcfl.area.state.type, 
+#              cols = starts_with("area"),
+#              names_to = "year",
+#              values_to = "area") %>%
+#   filter(type == "reservoir") %>%
+#   mutate(year = as.numeric(substr(x = year, start = 5, stop = 8))) %>%
+#   group_by(year, name) %>%
+#   summarise(area = sum(area)) %>%
+#   ggplot(., aes(year, area)) +
+#   geom_point() +
+#   facet_wrap(~name)
+# 
+# # Lake Oahe and Sakakawea
+# fl.e[[1]] %>% 
+#   filter(name == "North Dakota", lu == "Land Converted to Flooded Land") %>%
+#   select(COMID, FTYPE, GNIS_NAME_1, YEAR_COMPLETED, area_ha_new, area_ha_original) %>%
+#   arrange(desc(area_ha_original)) 
+  
+```
+
+##### All Flooded Land Surface Area and EFs by state, climate, type, lu, and inundation area
+```{r}
+# This table is used to calculate emissions via Excel (boo hoo).  Currently, inundation
+# and reservoir areas are separate in GIS.  Must keep them separate in table to
+# avoid double counting downstream emissions from reservoirs.  This required a new
+# emission factor excel file with inundation areas
+
+# Read in new EF spreadsheet. ef.in = emission factor w/ inundation area
+ef.in <- readxl::read_excel("inputData/defaultEmissionFactors_inundation.xlsx") %>%
+  select(type, lu, climate, co2.tonnes.ha.y, ch4.tonnes.ha.y)
+
+
+# Calculate area by state, type, climate
+fl.cl.area <- lapply(fl.e, function(x) {
+  # calculate area by state
+  x %>% 
+    st_drop_geometry() %>%
+  mutate(type = ifelse(type == "reservoir" & FTYPE == "Inundation Area",
+                       "reservoir - inundation area",
+                       type)) %>%
+    dplyr::group_by(lu, type, name, climate) %>% # 
+    summarize(area = sum(area_ha_new))  %>% # sum by group
+    mutate(area = replace(area, is.na(area), 0)) %>% # replace NA with 0
+    arrange(type, name)
+})
+
+# append calculation year to the name of the area variable
+for (i in 1:length(fl.cl.area)) { # for each list element
+  names(fl.cl.area[[i]])[names(fl.cl.area[[i]]) == "area"] = paste0("area", names(fl.cl.area[i])) # combine "area" with list element name (which is calculation year)
+}
+
+# FLRFL area table with climate
+fl.cl.area.state.type <- fl.cl.area %>% 
+  reduce(full_join) %>% # merge all elements of list into single df.
+  merge(., ef.in %>% rename(CO2.emission.factor.tonnes.co2.ha.y = co2.tonnes.ha.y,
+                         CH4.emission.factor.tonnes.ch4.ha.y = ch4.tonnes.ha.y)) %>%
+  mutate(across(contains("area"), ~replace(.x, is.na(.x), 0))) %>% # replace NA with 0
+  arrange(lu, type, name, climate) %>%
+  as.data.frame() # remove tibble stuff, messes with writing to excel
+
+```
+
+
+
+#### Flooded Land CH4
+##### Flooded Land Remaining Flooded Land: Downstream CH4 by State and Type
+```{r}
+# Calculate downstream CH4 emissions by state and type (0 for type != reservoir)
+flrfl.dn.ch4 <- lapply(fl.e, function(x) {
+  x %>% 
+    st_drop_geometry() %>%
+    filter(lu == "Flooded Land Remaining Flooded Land") %>%
+    dplyr::group_by(type, name) %>% # including climate group creates >6000 rows across all years
+    summarize(ch4.dn.tonnes.y = sum(ch4.dn.tonnes.y, na.rm = T))  %>% # sum by group
+    full_join(., full.state.type.grid) %>% # expand to include every state, even if area is NA (which means 0)
+    mutate(ch4.dn.tonnes.y = replace(ch4.dn.tonnes.y, is.na(ch4.dn.tonnes.y), 0)) %>% # replace NA with 0
+    arrange(type, name)
+})
+
+# append calculation year to the name of the area variable
+for (i in 1:length(flrfl.dn.ch4)) { # for each list element
+  names(flrfl.dn.ch4[[i]])[names(flrfl.dn.ch4[[i]]) == "ch4.dn.tonnes.y"] = paste0("ch4.dn.tonnes.y", names(flrfl.dn.ch4[i])) # combine "ch4.dn.tonnes.y" with list element name (which is calculation year)
+}
+
+# FLRFL ch4 downstream emissions table
+flrfl.dn.ch4.state.type <- flrfl.dn.ch4 %>% 
+  reduce(full_join) %>% # merge all elements of list into single df.
+  as.data.frame() %>% # remove tibble stuff, messes with writing to excel
+  filter(type == "reservoir") # zero downstream emissions for other types
+
+
+```
+
+##### Flooded Land Remaining Flooded Land: Surface CH4 by State and Type
+```{r}
+# Calculate surface CH4 emissions by state and type
+flrfl.surface.ch4 <- lapply(fl.e, function(x) {
+  x %>% 
+    st_drop_geometry() %>%
+    filter(lu == "Flooded Land Remaining Flooded Land") %>%
+    dplyr::group_by(type, name) %>% # including climate group creates >6000 rows across all years
+    summarize(ch4.surface.tonnes.y = sum(ch4.surface.tonnes.y, na.rm = T))  %>% # sum by group
+    full_join(., full.state.type.grid) %>% # expand to include every state, even if area is NA (which means 0)
+    mutate(ch4.surface.tonnes.y = replace(ch4.surface.tonnes.y, is.na(ch4.surface.tonnes.y), 0)) %>% # replace NA with 0
+    arrange(type, name)
+})
+
+# append calculation year to the name of the area variable
+for (i in 1:length(flrfl.surface.ch4)) { # for each list element
+  names(flrfl.surface.ch4[[i]])[names(flrfl.surface.ch4[[i]]) == "ch4.surface.tonnes.y"] = paste0("ch4.surface.tonnes.y", names(flrfl.surface.ch4[i])) # combine "ch4.dn.tonnes.y" with list element name (which is calculation year)
+}
+
+# FLRFL ch4 surface emissions table
+flrfl.surface.ch4.state.type <- flrfl.surface.ch4 %>% 
+  reduce(full_join) %>% # merge all elements of list into single df.
+  as.data.frame() # remove tibble stuff, messes with writing to excel
+  
+
+```
+
+##### Flooded Land Remaining Flooded Land: total CH4 by State and Type
+```{r}
+# Calculate total CH4 emissions by state and type
+flrfl.total.ch4 <- lapply(fl.e, function(x) {
+  x %>% 
+    st_drop_geometry() %>%
+    filter(lu == "Flooded Land Remaining Flooded Land") %>%
+    dplyr::group_by(type, name) %>% # including climate group creates >6000 rows across all years
+    summarize(ch4.total.tonnes.y = sum(ch4.total.tonnes.y, na.rm = T))  %>% # sum by group
+    full_join(., full.state.type.grid) %>% # expand to include every state, even if area is NA (which means 0)
+    mutate(ch4.total.tonnes.y = replace(ch4.total.tonnes.y, is.na(ch4.total.tonnes.y), 0)) %>% # replace NA with 0
+    arrange(type, name)
+})
+
+# append calculation year to the name of the area variable
+for (i in 1:length(flrfl.total.ch4)) { # for each list element
+  names(flrfl.total.ch4[[i]])[names(flrfl.total.ch4[[i]]) == "ch4.total.tonnes.y"] = paste0("ch4.total.tonnes.y", names(flrfl.total.ch4[i])) # combine "ch4.dn.tonnes.y" with list element name (which is calculation year)
+}
+
+# FLRFL ch4 total emissions table
+flrfl.total.ch4.state.type <- flrfl.total.ch4 %>% 
+  reduce(full_join) %>% # merge all elements of list into single df.
+  as.data.frame() # remove tibble stuff, messes with writing to excel
+  
+```
+
+
+##### Land Converted to Flooded Land: Downstream CH4 by State and Type
+```{r}
+# Calculate downstream CH4 emissions by state and type (0 for type != reservoir)
+lcfl.dn.ch4 <- lapply(fl.e, function(x) {
+  x %>% 
+    st_drop_geometry() %>%
+    filter(lu == "Land Converted to Flooded Land") %>%
+    dplyr::group_by(type, name) %>% # including climate group creates >6000 rows across all years
+    summarize(ch4.dn.tonnes.y = sum(ch4.dn.tonnes.y, na.rm = T))  %>% # sum by group
+    full_join(., full.state.type.grid) %>% # expand to include every state, even if area is NA (which means 0)
+    mutate(ch4.dn.tonnes.y = replace(ch4.dn.tonnes.y, is.na(ch4.dn.tonnes.y), 0)) %>% # replace NA with 0
+    arrange(type, name)
+})
+
+# append calculation year to the name of the area variable
+for (i in 1:length(lcfl.dn.ch4)) { # for each list element
+  names(lcfl.dn.ch4[[i]])[names(lcfl.dn.ch4[[i]]) == "ch4.dn.tonnes.y"] = paste0("ch4.dn.tonnes.y", names(lcfl.dn.ch4[i])) # combine "ch4.dn.tonnes.y" with list element name (which is calculation year)
+}
+
+# lcfl ch4 downstream emissions table
+lcfl.dn.ch4.state.type <- lcfl.dn.ch4 %>% 
+  reduce(full_join) %>% # merge all elements of list into single df.
+  as.data.frame() %>% # remove tibble stuff, messes with writing to excel
+  filter(type == "reservoir") # zero downstream emissions for other types
+
+
+```
+
+##### Land Converted to Flooded Land: Surface CH4 by State and Type
+```{r}
+# Calculate surface CH4 emissions by state and type
+lcfl.surface.ch4 <- lapply(fl.e, function(x) {
+  x %>% 
+    st_drop_geometry() %>%
+    filter(lu == "Land Converted to Flooded Land") %>%
+    dplyr::group_by(type, name) %>% # including climate group creates >6000 rows across all years
+    summarize(ch4.surface.tonnes.y = sum(ch4.surface.tonnes.y, na.rm = T))  %>% # sum by group
+    full_join(., full.state.type.grid) %>% # expand to include every state, even if area is NA (which means 0)
+    mutate(ch4.surface.tonnes.y = replace(ch4.surface.tonnes.y, is.na(ch4.surface.tonnes.y), 0)) %>% # replace NA with 0
+    arrange(type, name)
+})
+
+# append calculation year to the name of the area variable
+for (i in 1:length(lcfl.surface.ch4)) { # for each list element
+  names(lcfl.surface.ch4[[i]])[names(lcfl.surface.ch4[[i]]) == "ch4.surface.tonnes.y"] = paste0("ch4.surface.tonnes.y", names(lcfl.surface.ch4[i])) # combine "ch4.dn.tonnes.y" with list element name (which is calculation year)
+}
+
+# lcfl ch4 surface emissions table
+lcfl.surface.ch4.state.type <- lcfl.surface.ch4 %>% 
+  reduce(full_join) %>% # merge all elements of list into single df.
+  as.data.frame() # remove tibble stuff, messes with writing to excel
+
+
+```
+
+##### Land Converted to Flooded Land: total CH4 by State and Type
+```{r}
+# Calculate surface CH4 emissions by state and type
+lcfl.total.ch4 <- lapply(fl.e, function(x) {
+  x %>% 
+    st_drop_geometry() %>%
+    filter(lu == "Land Converted to Flooded Land") %>%
+    dplyr::group_by(type, name) %>% # including climate group creates >6000 rows across all years
+    summarize(ch4.total.tonnes.y = sum(ch4.total.tonnes.y, na.rm = T))  %>% # sum by group
+    full_join(., full.state.type.grid) %>% # expand to include every state, even if area is NA (which means 0)
+    mutate(ch4.total.tonnes.y = replace(ch4.total.tonnes.y, is.na(ch4.total.tonnes.y), 0)) %>% # replace NA with 0
+    arrange(type, name)
+})
+
+# append calculation year to the name of the area variable
+for (i in 1:length(lcfl.total.ch4)) { # for each list element
+  names(lcfl.total.ch4[[i]])[names(lcfl.total.ch4[[i]]) == "ch4.total.tonnes.y"] = paste0("ch4.total.tonnes.y", names(lcfl.total.ch4[i])) # combine "ch4.dn.tonnes.y" with list element name (which is calculation year)
+}
+
+# lcfl ch4 total emissions table
+lcfl.total.ch4.state.type <- lcfl.total.ch4 %>% 
+  reduce(full_join) %>% # merge all elements of list into single df.
+  as.data.frame() %>% # remove tibble stuff, messes with writing to excel
+  filter(type != 'canals and ditches') # no guidance for canals and ditches
+  
+```
+
+#### Flooded Land CO2
+This is only calculated for LCFL.  No downstream component calculated.
+
+##### Land Converted to Flooded Land: Surface CO2 by State and Type
+```{r}
+# Calculate surface CO2 emissions by state and type
+lcfl.co2 <- lapply(fl.e, function(x) {
+  x %>% 
+    st_drop_geometry() %>%
+    filter(lu == "Land Converted to Flooded Land") %>%
+    dplyr::group_by(type, name) %>% # including climate group creates >6000 rows across all years
+    summarize(co2.tonnes.y = sum(co2.tonnes.y, na.rm = T))  %>% # sum by group
+    full_join(., full.state.type.grid) %>% # expand to include every state, even if area is NA (which means 0)
+    mutate(co2.tonnes.y = replace(co2.tonnes.y, is.na(co2.tonnes.y), 0)) %>% # replace NA with 0
+    arrange(type, name)
+})
+
+# append calculation year to the name of the area variable
+for (i in 1:length(lcfl.co2)) { # for each list element
+  names(lcfl.co2[[i]])[names(lcfl.co2[[i]]) == "co2.tonnes.y"] = paste0("co2.tonnes.y", names(lcfl.co2[i])) # combine "co2.dn.tonnes.y" with list element name (which is calculation year)
+}
+
+# lcfl co2 surface emissions table
+lcfl.co2.state.type <- lcfl.co2 %>% 
+  reduce(full_join) %>% # merge all elements of list into single df.
+  as.data.frame() %>% # remove tibble stuff, messes with writing to excel
+  filter(type %in% c("reservoir", "freshwater pond")) # no methodology for other types
+```
+
+
+
+#### Write to Excel
+```{r}
+# Read excel file where output should be placed.
+file <- "output/outputTablesState.xlsx"
+
+#openxlsx approach for state tables
+wb <- openxlsx::loadWorkbook(file)
+sheets <- openxlsx::getSheetNames(file)
+
+
+
+# Sheet names states in inventory
+stateNames <- data.frame(state_abbr = us %>% st_drop_geometry() %>%
+                           select(name, state_abbr) %>%
+                           filter(!(state_abbr %in% c("AK", "HI", "PR"))) %>%
+                           select(state_abbr) %>% pull(),
+                         name = us %>% st_drop_geometry() %>%
+                           select(name, state_abbr) %>%
+                           filter(!(state_abbr %in% c("AK", "HI", "PR"))) %>%
+                           select(name) %>% pull()) %>%
+  arrange(name)
+  
+
+# openxlsx approach.  write data to excel file.
+for (i in 1:nrow(stateNames)){ # very fast
+  
+  sheet.i <- sheets[endsWith(sheets, stateNames$state_abbr[i])]
+  
+  # write FLRFL
+  openxlsx::writeData(wb,
+                      sheet = sheet.i,
+                      x = fl.cl.area.state.type %>% 
+                        filter(lu == "Flooded Land Remaining Flooded Land",
+                               name == stateNames$name[i]) %>%
+                        select(-contains("co2")),  
+                      rowNames = FALSE, colNames = FALSE,
+                      startRow = 6, startCol = 1,
+                      withFilter = FALSE)
+  
+  # write LCFL
+  openxlsx::writeData(wb,
+                      x = fl.cl.area.state.type %>% 
+                        filter(lu == "Land Converted to Flooded Land",
+                               name == stateNames$name[i]) %>%
+                        relocate(CO2.emission.factor.tonnes.co2.ha.y, 
+                                 .after = CH4.emission.factor.tonnes.ch4.ha.y),  
+                      sheet = sheet.i, # pull name from list
+                      rowNames = FALSE, colNames = FALSE,
+                      startRow = 31, # Will be below longest FLRFL table
+                      startCol = 1)
+  
+  print(paste0("data_added-", i))
+}
+openxlsx::saveWorkbook(wb, file, overwrite = TRUE) ## save to working directory  
+
+
+
+### Below is for national tables.  Currently written with xlsx.
+file.nat <- "output/outputTablesNational.xlsx"
+wb.nat <- xlsx::loadWorkbook(file.nat) # load file for further processing
+sheets <- xlsx::getSheets(wb.nat)
+numberColTSC <- 36 # This setting is for objects aggregated by type, state, and climate
+numberColLTSC <- 37 # This setting is for objects aggregated by land use, type, state, and climate
+
+
+# numeric formatting
+dataFormatNumberD <- DataFormat("#,##0") # thousands separator, no decimals
+cslistTSC <- lapply(4:numberColTSC, function(x){CellStyle(wb.nat) + dataFormatNumberD})
+cslistLTSC <- lapply(5:numberColLTSC, function(x){CellStyle(wb.nat) + dataFormatNumberD})
+
+# Formatting for totals row
+fillSecondary <- Fill('#ff6666','#ff6666','SOLID_FOREGROUND') #fill color
+createFonts <- function(wb) {list(data = Font(wb.nat, isBold = TRUE))} # bold font
+f <- createFonts(wb.nat) # bold font
+
+# Add data to excel file
+# FLRFL surface area aggregated by state, climate, type, 
+addDataFrame(x = fl.cl.area.state.type %>% 
+               filter(lu == "Flooded Land Remaining Flooded Land") %>%
+               select(-lu, -contains("co2")),  
+             sheet = sheets[]$`7.3.1_FLRFL_allCalcs`, # pull name from list
+             row.names = FALSE, col.names = FALSE,
+             startRow = 6, startColumn = 1,
+             # apply number formatting
+             colStyle = setNames(cslistTSC, 4:(numberColTSC-2))) # -2 select our lu and co2
+
+addDataFrame(x = fl.cl.area.state.type %>% 
+               filter(lu == "Flooded Land Remaining Flooded Land")%>%
+               select_if(~is.numeric(.)) %>%
+               select(!contains("tonnes")) %>%
+               # https://stackoverflow.com/questions/28873057/sum-across-multiple-columns-with-dplyr
+               summarise(across(everything(), ~sum(., is.na(.), 0))),  # col sums
+             sheet = sheets[]$`7.3.1_FLRFL_allCalcs`, # names are weird, pull from list
+             row.names = FALSE, col.names = FALSE,
+             startRow = nrow(fl.cl.area.state.type %>% 
+               filter(lu == "Flooded Land Remaining Flooded Land")) + 6, # +6 space on top
+             startColumn = 4, # start under first numeric column
+             colStyle = setNames(lapply(cslistTSC, function(x){
+               x + fillSecondary + f$data}), 1:31)) # 31 colums
+
+
+
+# Reset these formatting specifics for more coarsly aggregated data below
+numberCol <- 32 # all data object have type, state, and 30 years, for a total of 32 columns
+
+# numeric formatting
+dataFormatNumberD <- DataFormat("#,##0") # thousands separator, no decimals
+cslist <- lapply(3:numberCol, function(x){CellStyle(wb.nat) + dataFormatNumberD})
+
+# Formatting for totals row
+fillSecondary <- Fill('#ff6666','#ff6666','SOLID_FOREGROUND') #fill color
+createFonts <- function(wb.nat) {list(data = Font(wb.nat, isBold = TRUE))} # bold font
+f <- createFonts(wb.nat) # bold font
+
+
+# FLRFL area
+addDataFrame(x = flrfl.area.state.type,  
+             sheet = sheets[]$`7.3.1_FLRFL_area`, # pull name from list
+             row.names = FALSE, col.names = FALSE,
+             startRow = 6, startColumn = 1,
+             colStyle = setNames(cslist,3:numberCol))
+addDataFrame(x = flrfl.area.state.type %>% select_if(~is.numeric(.)) %>%
+               # https://stackoverflow.com/questions/28873057/sum-across-multiple-columns-with-dplyr
+               summarise(across(everything(), ~sum(., is.na(.), 0))),  # col sums
+               sheet = sheets[]$`7.3.1_FLRFL_area`, # names are weird, pull from list
+             row.names = FALSE, col.names = FALSE,
+             startRow = nrow(flrfl.area.state.type) + 6, # +6 space on top
+             startColumn = 3, # start under first numeric column
+             colStyle = setNames(lapply(cslist, function(x){x + fillSecondary + f$data}), 1:30))
+
+
+# FLRFL downstream CH4
+addDataFrame(x = flrfl.dn.ch4.state.type,  
+             sheet = sheets[]$`7.3.1_FLRFL_dnCh4`, # pull name from list
+             row.names = FALSE, col.names = FALSE,
+             startRow = 6, startColumn = 1,
+             colStyle = setNames(cslist,3:numberCol))
+addDataFrame(x = flrfl.dn.ch4.state.type %>% select_if(~is.numeric(.)) %>%
+               # https://stackoverflow.com/questions/28873057/sum-across-multiple-columns-with-dplyr
+               summarise(across(everything(), ~sum(., is.na(.), 0))),  # col sums
+             sheet = sheets[]$`7.3.1_FLRFL_dnCh4`, # names are weird, pull from list
+             row.names = FALSE, col.names = FALSE,
+             startRow = nrow(flrfl.dn.ch4.state.type) + 6, # +6 space on top
+             startColumn = 3, # start under first numeric column
+             colStyle = setNames(lapply(cslist, function(x){x + fillSecondary + f$data}), 1:30))
+
+
+# FLRFL surface CH4
+addDataFrame(x = flrfl.surface.ch4.state.type,  
+             sheet = sheets[]$`7.3.1_FLRFL_surfCh4`, # pull name from list
+             row.names = FALSE, col.names = FALSE,
+             startRow = 6, startColumn = 1,
+             colStyle = setNames(cslist,3:numberCol))
+addDataFrame(x = flrfl.surface.ch4.state.type %>% select_if(~is.numeric(.)) %>%
+               # https://stackoverflow.com/questions/28873057/sum-across-multiple-columns-with-dplyr
+               summarise(across(everything(), ~sum(., is.na(.), 0))),  # col sums
+             sheet = sheets[]$`7.3.1_FLRFL_surfCh4`, # names are weird, pull from list
+             row.names = FALSE, col.names = FALSE,
+             startRow = nrow(flrfl.surface.ch4.state.type) + 6, # +6 space on top
+             startColumn = 3, # start under first numeric column
+             colStyle = setNames(lapply(cslist, function(x){x + fillSecondary + f$data}), 1:30))
+
+
+# FLRFL total CH4
+addDataFrame(x = flrfl.total.ch4.state.type,  
+             sheet = sheets[]$`7.3.1_FLRFL_totCh4`, # pull name from list
+             row.names = FALSE, col.names = FALSE,
+             startRow = 6, startColumn = 1,
+             colStyle = setNames(cslist,3:numberCol))
+addDataFrame(x = flrfl.total.ch4.state.type %>% select_if(~is.numeric(.)) %>%
+               # https://stackoverflow.com/questions/28873057/sum-across-multiple-columns-with-dplyr
+               summarise(across(everything(), ~sum(., is.na(.), 0))),  # col sums
+             sheet = sheets[]$`7.3.1_FLRFL_totCh4`, # names are weird, pull from list
+             row.names = FALSE, col.names = FALSE,
+             startRow = nrow(flrfl.total.ch4.state.type) + 6, # +6 space on top
+             startColumn = 3, # start under first numeric column
+             colStyle = setNames(lapply(cslist, function(x){x + fillSecondary + f$data}), 1:30))
+
+
+# LCFL area
+addDataFrame(x = lcfl.area.state.type,  
+             sheet = sheets[]$`7.3.2_LCFL_area`,
+             row.names = FALSE, col.names = FALSE,
+             startRow = 6, startColumn = 1,
+             colStyle = setNames(cslist,3:numberCol))
+addDataFrame(x = lcfl.area.state.type %>% select_if(~is.numeric(.)) %>%
+               # https://stackoverflow.com/questions/28873057/sum-across-multiple-columns-with-dplyr
+               summarise(across(everything(), ~sum(., is.na(.), 0))),  # col sums
+             sheet = sheets[]$`7.3.2_LCFL_area`, # names are weird, pull from list
+             row.names = FALSE, col.names = FALSE,
+             startRow = nrow(lcfl.area.state.type) + 6, # +6 space on top
+             startColumn = 3, # start under first numeric column
+             colStyle = setNames(lapply(cslist, function(x){x + fillSecondary + f$data}), 1:30))
+
+
+# LCFL downstream CH4
+addDataFrame(x = lcfl.dn.ch4.state.type,  
+             sheet = sheets[]$`7.3.2_LCFL_dnCh4`, # pull name from list
+             row.names = FALSE, col.names = FALSE,
+             startRow = 6, startColumn = 1,
+             colStyle = setNames(cslist,3:numberCol))
+addDataFrame(x = lcfl.dn.ch4.state.type %>% select_if(~is.numeric(.)) %>%
+               # https://stackoverflow.com/questions/28873057/sum-across-multiple-columns-with-dplyr
+               summarise(across(everything(), ~sum(., is.na(.), 0))),  # col sums
+             sheet = sheets[]$`7.3.2_LCFL_dnCh4`, # names are weird, pull from list
+             row.names = FALSE, col.names = FALSE,
+             startRow = nrow(lcfl.dn.ch4.state.type) + 6, # +6 space on top
+             startColumn = 3, # start under first numeric column
+             colStyle = setNames(lapply(cslist, function(x){x + fillSecondary + f$data}), 1:30))
+
+# LCFL surface CH4
+addDataFrame(x = lcfl.surface.ch4.state.type,  
+             sheet = sheets[]$`7.3.2_LCFL_surfCh4`, # pull name from list
+             row.names = FALSE, col.names = FALSE,
+             startRow = 6, startColumn = 1,
+             colStyle = setNames(cslist,3:numberCol))
+addDataFrame(x = lcfl.surface.ch4.state.type %>% select_if(~is.numeric(.)) %>%
+               # https://stackoverflow.com/questions/28873057/sum-across-multiple-columns-with-dplyr
+               summarise(across(everything(), ~sum(., is.na(.), 0))),  # col sums
+             sheet = sheets[]$`7.3.2_LCFL_surfCh4`, # names are weird, pull from list
+             row.names = FALSE, col.names = FALSE,
+             startRow = nrow(lcfl.surface.ch4.state.type) + 6, # +6 space on top
+             startColumn = 3, # start under first numeric column
+             colStyle = setNames(lapply(cslist, function(x){x + fillSecondary + f$data}), 1:30))
+
+
+# LCFL total CH4
+addDataFrame(x = lcfl.total.ch4.state.type,  
+             sheet = sheets[]$`7.3.2_LCFL_totCh4`, # pull name from list
+             row.names = FALSE, col.names = FALSE,
+             startRow = 6, startColumn = 1,
+             colStyle = setNames(cslist, 3:numberCol))
+
+addDataFrame(x = lcfl.total.ch4.state.type %>% select_if(~is.numeric(.)) %>%
+               # https://stackoverflow.com/questions/28873057/sum-across-multiple-columns-with-dplyr
+               summarise(across(everything(), ~sum(., is.na(.), 0))),  # col sums
+               sheet = sheets[]$`7.3.2_LCFL_totCh4`, # names are weird, pull from list
+             row.names = FALSE, col.names = FALSE,
+             startRow = nrow(lcfl.total.ch4.state.type) + 6, # +6 space on top
+             startColumn = 3, # start under first numeric column
+             colStyle = setNames(lapply(cslist, function(x){x + fillSecondary + f$data}), 1:30)
+)
+
+
+# LCFL CO2
+addDataFrame(x = lcfl.co2.state.type,  
+             sheet = sheets[]$`7.3.2_LCFL_Co2`, # pull name from list
+             row.names = FALSE, col.names = FALSE,
+             startRow = 6, startColumn = 1,
+             colStyle = setNames(cslist,3:numberCol))
+
+addDataFrame(x = lcfl.co2.state.type %>% select_if(~is.numeric(.)) %>%
+               # https://stackoverflow.com/questions/28873057/sum-across-multiple-columns-with-dplyr
+               summarise(across(everything(), ~sum(., is.na(.), 0))),  # col sums
+             sheet = sheets[]$`7.3.2_LCFL_Co2`, # names are weird, pull from list
+             row.names = FALSE, col.names = FALSE,
+             startRow = nrow(lcfl.co2.state.type) + 6, #  +6 space on top
+             startColumn = 3, # start under first numeric column
+             colStyle = setNames(lapply(cslist, function(x){x + fillSecondary + f$data}), 1:30)
+)
+
+
+
+#setForceFormulaRecalculation(wb,"data",TRUE)
+wb.nat$setForceFormulaRecalculation(TRUE)
+saveWorkbook(wb.nat, file.nat)
+```
+
+# Text for report
+### Emissions and Removals from Flooded Land Remaining Flooded Land - Reservoirs
+In 2020 the conterminous United States hosted `r flrfl.area.state.type %>% filter(type == "reservoir") %>% select(area2020) %>% summarize(tot.area = sum(area2020)) %>% pull()` hectares of reservoirs in the Flooded Land Remaining Flooded Land category.  These reservoirs are distributed across the `r fl.e[[1]] %>% st_drop_geometry() %>% filter(lu == "Flooded Land Remaining Flooded Land", type == "reservoir") %>% summarize(climate.zones = length(unique(climate))) %>% pull()`.
+
+Table x-x below is a nationally aggregated inventory of CH4 flux from Flooded Land Remaining Flooded Land - Reservoirs. First is downstream emissions`r flrfl.dn.ch4.state.type  %>% filter(type == "reservoir") %>% select(paste0("ch4.dn.tonnes.y", c(1990, 2005, 2016, 2017, 2018, 2019, 2020))) %>% summarize(across(everything(), ~sum(.x, na.rm = TRUE)/1000))`, here is surface emissions `r flrfl.surface.ch4.state.type  %>% filter(type == "reservoir") %>% select(paste0("ch4.surface.tonnes.y", c(1990, 2005, 2016, 2017, 2018, 2019, 2020))) %>% summarize(across(everything(), ~sum(.x, na.rm = TRUE)/1000))`.
+
+Aggregated reservoir emissions plotted by state.
+```{r}
+# Calculate total reservoir CH4 emissions by state for 2020
+flrfl.total.ch4.2020.reservoir <- fl.e$`2020` %>% 
+  st_drop_geometry() %>% 
+    filter(lu == "Flooded Land Remaining Flooded Land",
+           type == "reservoir") %>%
+    dplyr::group_by(name) %>% 
+    summarize(ch4.total.tonnes.y = sum(ch4.total.tonnes.y, na.rm = T))  %>% # sum by group
+    full_join(., state.names) %>% # expand to include every state, even if area is NA (which means 0)
+    mutate(ch4.total.tonnes.y = replace(ch4.total.tonnes.y, is.na(ch4.total.tonnes.y), 0),
+           ch4.total.ktonnes.y = ch4.total.tonnes.y / 1000) %>% # replace NA with 0
+    arrange(name)
+
+# data for US state map
+us.plot <- us %>%  
+  filter(!(name %in% c("Hawaii", "Alaska", "Puerto Rico")))
+
+# add emissions data to object
+us.plot.flrfl.total.ch4.2020.reservoir <- merge(us.plot, 
+                                                flrfl.total.ch4.2020.reservoir) 
+
+# Transform to Albers for making map of US
+us.plot.flrfl.total.ch4.2020.reservoir <- st_transform(us.plot.flrfl.total.ch4.2020.reservoir, 5070)
+
+
+ggplot(us.plot.flrfl.total.ch4.2020.reservoir) +
+  geom_sf(aes(fill = ch4.total.ktonnes.y)) +
+  scale_fill_distiller(expression(CH[4]~flux~(kt~y^-1)), 
+                       palette = "Blues", direction = -1) 
+
+ggsave("output/figures/FLRFL.reservoir.2020.Tch4.tiff")
+```
+
+
+
+
+#### Methodology
+Flooded land age was determined from data in the NID when available (`r dplyr::bind_rows(nav, inund, res) %>% st_drop_geometry() %>% filter(!is.na(YEAR_COMPLETED)) %>% summarize(total.n = n()) %>% pull()` out of `r dplyr::bind_rows(nav, inund, res) %>% st_drop_geometry() %>% summarize(total.n = n()) %>% pull()`).  
+
+Table x-x below is a nationally aggregated inventory of reservoir surface area. `r flrfl.area.state.type %>% filter(type == "reservoir") %>% select(area1990, area2005, area2015, area2016, area2017, area2018, area2019) %>% summarize(across(everything(), ~ sum(.x, na.rm = TRUE)/1000000))` million hectares.
+
+
+### Other Constructed Waterbodies (Freshwater Ponds, Saline Ponds, Canals and Ditches)
+In 2019 the conterminous United States hosted `r flrfl.area.state.type %>% filter(type != "reservoir") %>% group_by(type) %>% select(area2019) %>% summarize(tot.area = sum(area2019)) `  hectares of freshwater pond and `canals and ditches` surface area, respectively, in the Flooded Land Remaining Flooded Land category.  These are distributed across  `r fl.e[[1]] %>% st_drop_geometry() %>% filter(lu == "Flooded Land Remaining Flooded Land", type != "reservoir") %>% summarize(climate.zones = length(unique(climate))) %>% pull()` of the aggregated climate zones used to define Flooded Land emission factors in the 2019 Refinement to the 2006 IPCC Guidelines for National Greenhouse Gas Inventories (Chapter 7, Wetlands).  
+
+#### Emissions and Removals from Land Converted to Flooded Land - Other Constructed Waterbodies
+```{r}
+# FLRFL-other constructed waterbodies ch4 total emissions table
+flrfl.total.ch4 %>% 
+  reduce(full_join) %>% # merge all elements of list into single df.
+  filter(type != "reservoir") %>%
+  rename_with(~substr(., 19, 22), contains("ch4")) %>%
+  select(type, "1990", "2005", "2015", "2016", "2017", "2018", "2019") %>%
+  group_by(type) %>%
+  summarize(across(everything(), ~sum(.x)/1000, .names = "ktCh4_{.col}")) %>% #kt
+  mutate(across(where(is.numeric), ~(./1000)*25, .names = "mmtCo2Eq_{.col}"))
+  
+```
+#### Methodology
+
+##### Area
+```{r}
+flrfl.area.state.type %>% 
+  filter(type != "reservoir") %>%
+  rename_with(~substr(., 5, 8), contains("area")) %>%
+  select(type, "1990", "2005", "2015", "2016", "2017", "2018", "2019") %>%
+  group_by(type) %>%
+  summarize(across(everything(), ~sum(.x), .names = "area_ha_{.col}"))
+
+```
+
+
+# Uncertainty analysis
+
+```{r}
+# Read in emission factors
+ef.error <- readxl::read_excel("inputData/defaultEmissionFactors.xlsx") %>%
+  # 95% CI EF for ponds is asymmetrical around the mean, causing the 95% CI
+  # of total emissions to not include the mean.  Here I'm expanding the CI
+  # of the EF to force symmetry around mean.
+  mutate(ch4.tonnes.ha.y.upr = replace(ch4.tonnes.ha.y.upr, 
+                                       type == "freshwater pond",
+                                       0.248)) 
+
+# record nrow of fl list prior to merge.  Should be identical after merge.
+n.row.prior <- nrow(fl$`2019`) #47573
+
+# Merge emission factors with each list element.  This takes a few minutes
+fl.error <- merge(fl$`2019`, ef.error)  
+
+# Make sure no records were lost during merge
+# LOOKS GOOD
+n.row.prior == nrow(fl.error)
+
+# Calculate emissions
+fl.error.list <- list()
+
+for (i in 1:200) {
+  poo <- fl.error %>% 
+    mutate(co2.tonnes.ha.y = runif(nrow(fl.error), co2.tonnes.ha.y.lwr, co2.tonnes.ha.y.upr),
+           ch4.tonnes.ha.y = runif(nrow(fl.error), ch4.tonnes.ha.y.lwr, ch4.tonnes.ha.y.upr),
+           dn.ef = 0.09, #runif(nrow(fl.error), 0.05, 0.22),
+           area_ha_new = runif(nrow(fl.error), #10% error in area
+                               min = area_ha_new - (area_ha_new*0.1), 
+                               max = area_ha_new + (area_ha_new*0.1)),
+           co2.tonnes.y = area_ha_new * co2.tonnes.ha.y,
+           ch4.surface.tonnes.y = area_ha_new * ch4.tonnes.ha.y,
+           ch4.dn.tonnes.y = ifelse(type %in% c("freshwater pond", "canals and ditches"), # no DN for 'other'
+                                    0,
+                                    ch4.surface.tonnes.y * dn.ef),
+           ch4.dn.tonnes.y = replace(ch4.dn.tonnes.y, FTYPE == "Inundation Area", 0), # dn from associated res, dont double count
+           ch4.total.tonnes.y = ch4.surface.tonnes.y + ch4.dn.tonnes.y)
+
+fl.error.list[[i]] <- poo
+}
+
+
+```
+
+
+### Flooded Land Remaining Flooded Land Uncertainty: total CH4 by State and Type
+```{r}
+# Calculate total CH4 emissions by state and type
+flrfl.total.ch4.u <- lapply(fl.error.list, function(x) {
+  x %>% 
+    st_drop_geometry() %>%
+    filter(lu == "Flooded Land Remaining Flooded Land") %>% # 
+    # mutate(type = ifelse(type == "reservoir",
+    #                      "reservoir",
+    #                      "other")) %>% # calculate separately for 'other' and reservoirs
+    dplyr::group_by(type) %>%
+    summarize(ch4.total.tonnes.y = sum(ch4.total.tonnes.y, na.rm = T))  %>% # sum by group
+    mutate(ch4.total.tonnes.y = replace(ch4.total.tonnes.y, is.na(ch4.total.tonnes.y), 0))  # replace NA with 0
+  })
+
+
+# FLRFL ch4 total emissions table
+flrfl.total.ch4.uncertainty.result <- flrfl.total.ch4.u %>% 
+  reduce(full_join) %>% # merge all elements of list into single df.
+  group_by(type) %>%
+  summarize(ch4.total.tonnes.y.lwr = min(ch4.total.tonnes.y, na.rm = T)/1000,
+            ch4.total.tonnes.y.upr = max(ch4.total.tonnes.y, na.rm = T)/1000)
+
+flrfl.total.ch4.uncertainty.result
+
+
+
+```
+
+
+
+
+
