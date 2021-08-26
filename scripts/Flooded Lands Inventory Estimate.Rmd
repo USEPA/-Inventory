@@ -26,18 +26,18 @@ Load libraries and print session info to facilitate reproducibility.
 #https://stackoverflow.com/questions/21937640/handling-java-lang-outofmemoryerror-when-writing-to-excel-from-r
 #https://stackoverflow.com/questions/27153974/how-to-fix-outofmemoryerror-java-gc-overhead-limit-exceeded-in-r
 
-# options(java.parameters = "-Xmx1024m") #"-Xmx1024m" worked once
-# 
-# library(tidyverse)
-# library(sf)
-# library(USAboundaries)
-# library(lwgeom)
-# library(xlsx)
-# 
-# 
-# 
-# # Print R session info
-# print(sessionInfo())
+options(java.parameters = "-Xmx1024m") #"-Xmx1024m" worked once
+
+library(tidyverse)
+library(sf)
+library(USAboundaries)
+library(lwgeom)
+library(xlsx)
+
+
+
+# Print R session info
+print(sessionInfo())
 ```
 
 
@@ -50,36 +50,43 @@ Below we read in the layers created by Alex.  Layers are then combined into a si
 ```{r, message=FALSE, warning=FALSE, results="hide"}
 
 #  read data from local sources
-# from US_Reservoirs3.gdb provided by Hall on 8/24/2021
+# from US_Flooded_Lands.gdb provided by Hall on 8/26/2021
+# Inundation areas
 inund <- sf::st_read(paste0("C:\\Users\\JBEAULIE\\Environmental Protection Agency (EPA)\\",
                             "SuRGE Survey of Reservoir Greenhouse gas Emissions - Documents\\",
-                            "surgeDsn\\nationalFloodedLandsMapping\\Reservoir Data\\US_Reservoirs3.gdb"),
+                            "surgeDsn\\nationalFloodedLandsMapping\\Reservoir Data\\US_Flooded_Lands.gdb"),
                      layer = "Inundation_Areas") %>%
-  st_transform(4269)
+  st_transform(5070) # Conus Albers for mapping and area calculations
 
-# from Data.gdb provided by Alex on 1/10/2020
+# Navigable waterways
 nav <- sf::st_read(paste0("C:\\Users\\JBEAULIE\\Environmental Protection Agency (EPA)\\",
                           "SuRGE Survey of Reservoir Greenhouse gas Emissions - Documents\\",
-                          "surgeDsn\\nationalFloodedLandsMapping\\Reservoir Data\\Data.gdb"),
-                   layer = "Navigable_Waterways") %>%
-  filter(FTYPE != "SeaOcean")
-st_crs(nav) #4269
+                          "surgeDsn\\nationalFloodedLandsMapping\\Reservoir Data\\US_Flooded_Lands.gdb"),
+                   layer = "Navigable_Waterways_Update") %>%
+  st_transform(5070) # Conus Albers for mapping and area calculations
 
-# from US_Reservoirs2.gdb provided by Hall on 8/12/2021
+
+# Reservoirs
 res <- sf::st_read(paste0("C:\\Users\\JBEAULIE\\Environmental Protection Agency (EPA)\\",
-                            "SuRGE Survey of Reservoir Greenhouse gas Emissions - Documents\\",
-                            "surgeDsn\\nationalFloodedLandsMapping\\Reservoir Data\\US_Reservoirs3.gdb"),
-                     layer = "Reservoirs_Update") %>%
-  st_transform(4269)
+                          "SuRGE Survey of Reservoir Greenhouse gas Emissions - Documents\\",
+                          "surgeDsn\\nationalFloodedLandsMapping\\Reservoir Data\\US_Flooded_Lands.gdb"),
+                   layer = "Reservoirs_Update") %>%
+  st_transform(5070) # Conus Albers for mapping and area calculations
 
+# Canals and ditches
+canals <- sf::st_read(paste0("C:\\Users\\JBEAULIE\\Environmental Protection Agency (EPA)\\",
+                          "SuRGE Survey of Reservoir Greenhouse gas Emissions - Documents\\",
+                          "surgeDsn\\nationalFloodedLandsMapping\\Reservoir Data\\US_Flooded_Lands.gdb"),
+                   layer = "Canal_Ditches") %>%
+  st_transform(5070) # Conus Albers for mapping and area calculations
 
 # Total number of observations
-nrow(inund) + nrow(nav) + nrow(res) #54,708
+nrow(inund) + nrow(nav) + nrow(res) + nrow(canals) #55,073
 
 # combine spatial data object
-fl.sf <- dplyr::bind_rows(nav, inund, res) 
-nrow(fl.sf) #54708, all observations retained
-st_crs(fl.sf) #4269
+fl.sf <- dplyr::bind_rows(nav, inund, res, canals) 
+nrow(fl.sf) #55073, all observations retained
+st_crs(fl.sf) # 5070, Conus Albers for mapping and area calculations
 ```
 
 ## Flooded Lands By State
@@ -95,12 +102,14 @@ names(fl.sf)[grepl(pattern = "area", x = names(fl.sf), ignore.case = TRUE)] # 12
 fl.sf$area_ha_original <- st_area(fl.sf) %>% units::set_units(., ha) # get in hectares
 # compare recalculated and imported area values
 fl.sf %>% filter(COMID == 13335116) %>% # grab Mississippi Pool 8 
-  select(area_ha_original, Area_ha) # great, looks good!
+  select(area_ha_original, Are_ha) # great, nearly identical results.  Differences
+# may be due to projection changes (Albers used here)
 
-# remove other area related variables for simplicity
-area_names <- names(fl.sf)[grepl(pattern = "area", x = names(fl.sf), ignore.case = TRUE)] # all names with "area"
+# remove other area related variables for simplicity.
+# All names with 'are';  one area field is 'Are_ha'
+area_names <- names(fl.sf)[grepl(pattern = "are", x = names(fl.sf), ignore.case = TRUE)] 
 area_names <- area_names[!(area_names == "area_ha_original")] # want to keep 'area_ha_original'
-fl.sf <- fl.sf %>% select(-area_names)
+fl.sf <- fl.sf %>% select(-all_of(area_names))
 
 
 # add state identifier to each waterbody.  Polygons that cross state boundaries
@@ -111,8 +120,7 @@ fl.sf %>% filter(COMID == 13335116) %>% plot(., max.plot = 1) # preview geometry
 
 # get state boundary
 us <- us_states() %>% # get states map
-  # filter(name %in% c("Hawaii", "Alaska") %>% # I think we use all states and DC
-  st_transform(crs = 4269) # 4269, as above.  Not certain what warning is about.
+  st_transform(crs = 5070) # 5070, as above
 
 # Now intersect with state
 fl.sf <- sf::st_intersection(x = fl.sf, y = us)
@@ -135,7 +143,7 @@ IPCC emission factors are aggregated into six climate zones.  Below we assign ag
 climate <- sf::st_read("inputData/climateMap", layer = "ipcc_zones_2017_names") %>%
   select(fldd_zn) %>% # pull out Flooded Lands climate zone
   rename(climate = fldd_zn) %>% # rename
-   st_transform(4269) # consistent with above
+   st_transform(5070) # consistent with above
 
 plot(climate)
 
@@ -163,7 +171,7 @@ fl.sf.c$area_ha_new <- st_area(fl.sf.c) %>% units::set_units(., ha) # get in hec
 
 # compare area_ha_original and area_ha_new
 fl.sf.c %>% filter(COMID == 13335116) %>% # grab Mississippi Pool 8 
-  select(name, area_ha_original, area_ha_new) # great, looks good!
+  select(name, area_ha_original, area_ha_new) # sum of new = original. good
 
 
 # this is a good example of how the new state specific polygon could be less
@@ -232,7 +240,7 @@ for (i in 1: length(fl)) { # do all elements simultaneously
 # Calculate waterbody age for each calculation year
 # More recent years should have more waterbodies due to recent construction.
 # First, how many records per list element now
-lapply(fl, function(x) nrow(x)) #55284 rows
+lapply(fl, function(x) nrow(x)) #55625 rows
 
 fl <- lapply(fl, function(x) # calculate age per calculation year
   x %>% mutate(age = calc_year - YEAR_COMPLETED) %>%
@@ -243,7 +251,7 @@ fl <- lapply(fl, function(x) # calculate age per calculation year
                        "Flooded Land Remaining Flooded Land",
                        "Land Converted to Flooded Land"))) 
 
-lapply(fl, function(x) nrow(x)) #55,284 in 2020, but only 54,824 in 1990. good
+lapply(fl, function(x) nrow(x)) #55,625 in 2020, but only 55,165 in 1990. good
 unique(fl[[29]]$lu)
 table(fl[[29]]$lu)
 ```
@@ -286,13 +294,15 @@ fl.e <- lapply(fl, function(x)
 n.row.prior == lapply(fl.e, function(x) nrow(x)) %>% do.call("rbind",. )
 
 # Calculate emissions
+# Downstream emissions are calculated as 9% of surface emissions.  Surface emissions
+# should reflect sum of reservoir + inundation area emissions.  Therefore
+# downstream emissions should be calculated for both inundation and reservoir.
 fl.e <- lapply(fl.e, function(x) {
   x %>% mutate(co2.tonnes.y = area_ha_new * co2.tonnes.ha.y,
                ch4.surface.tonnes.y = area_ha_new * ch4.tonnes.ha.y,
                ch4.dn.tonnes.y = ifelse(type %in% c("freshwater pond", "canals and ditches"), # no DN for 'other'
                                         0,
                                         ch4.surface.tonnes.y * 0.09),
-               ch4.dn.tonnes.y = replace(ch4.dn.tonnes.y, FTYPE == "Inundation Area", 0), # dn from associated res, dont double count
                ch4.total.tonnes.y = ch4.surface.tonnes.y + ch4.dn.tonnes.y)
 })
 
@@ -305,6 +315,8 @@ fl.e <- lapply(fl.e, function(x) {
 ```{r}
 # We want all states to have an area value for each type (res, pond, ditch), even
 # if the value is 0.  Create a full matrix of type by state for joining with area calculations.
+# this may not be necessary, but this way states will know their area isn't missing,
+# but may have 0 for some things.
 
 # 1. df of all states in our inventory
 state.names <- us %>% st_drop_geometry() %>% select(name) %>% 
@@ -658,7 +670,6 @@ wb <- openxlsx::loadWorkbook(file)
 sheets <- openxlsx::getSheetNames(file)
 
 
-
 # Sheet names states in inventory
 stateNames <- data.frame(state_abbr = us %>% st_drop_geometry() %>%
                            select(name, state_abbr) %>%
@@ -944,14 +955,13 @@ us.plot <- us %>%
 us.plot.flrfl.total.ch4.2020.reservoir <- merge(us.plot, 
                                                 flrfl.total.ch4.2020.reservoir) 
 
-# Transform to Albers for making map of US
-us.plot.flrfl.total.ch4.2020.reservoir <- st_transform(us.plot.flrfl.total.ch4.2020.reservoir, 5070)
-
 
 ggplot(us.plot.flrfl.total.ch4.2020.reservoir) +
   geom_sf(aes(fill = ch4.total.ktonnes.y)) +
-  scale_fill_distiller(expression(CH[4]~flux~(kt~y^-1)), 
-                       palette = "Blues", direction = -1) 
+  scale_fill_distiller(expression(kt~CH[4]~y^-1), 
+                       palette = "Blues", direction = -1) +
+  coord_sf(datum = NA) + # this removes grid lines.
+  theme(panel.background = element_blank())
 
 ggsave("output/figures/FLRFL.reservoir.2020.Tch4.tiff")
 ```
