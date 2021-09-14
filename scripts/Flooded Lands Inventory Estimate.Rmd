@@ -35,6 +35,9 @@ library(lwgeom)
 library(xlsx)
 library(cowplot)
 
+library(conflicted) # manage MASS::select and dplyr::select conflict
+conflict_prefer("select", "dplyr")
+conflict_prefer("filter", "dplyr")
 
 
 # Print R session info
@@ -876,7 +879,7 @@ ggsave("output/figures/FLRFL.reservoir.2020.Tch4.tiff")
 #####TABLE:: FLRFL-reservoirs CH4 emissions by mechanism (dn, surface), type (inundation, reservoir), and state
 ```{r}
 
-# MUST CONVERT TO KT.  DIVIDE BY 1000!
+
 fl.e$`2020` %>%  
   st_drop_geometry() %>%
   filter(type == "reservoir",
@@ -892,6 +895,9 @@ fl.e$`2020` %>%
          `ch4.dn.tonnes.y_inundation area`, `ch4.surface.tonnes.y_inundation area`) %>%
   mutate(ch4.dn.tonnes.y = ch4.dn.tonnes.y_reservoir + `ch4.dn.tonnes.y_inundation area`,
          ch4.surface.tonnes.y = ch4.surface.tonnes.y_reservoir + `ch4.surface.tonnes.y_inundation area`) %>%
+  mutate(across(where(is.numeric), ~.x/1000)) %>% # convert to kt
+  rename_with(~sub(pattern = "tonnes", replacement = "ktonnes", x = .), 
+              .cols = contains("tonnes")) %>%
   write.table(., "clipboard", row.names = FALSE)
 
 ```
@@ -1153,7 +1159,7 @@ ggplot() +
 ggsave("output/figures/climateMapLCFL.tiff")
 ```
 
-Methane and CO2 flux from reservoirs and inundated areas in Minnesota was nearly 10-fold greater than any other state (Figure 2, Table x-x).  This is attributed to `r  fl.e$`2020` %>% st_drop_geometry() %>% filter(lu == "Land Converted to Flooded Land", type == "reservoir", name == "Minnesota") %>% select(name, COMID, contains("area"), contains("year", ignore.case = TRUE)) %>% summarize(n = length(unique(COMID))) ` dams which impound `r  fl.e$`2020` %>% st_drop_geometry() %>% filter(lu == "Land Converted to Flooded Land", type == "reservoir", name == "Minnesota") %>% select(name, COMID, contains("area"), contains("year", ignore.case = TRUE)) %>% distinct(COMID, .keep_all = TRUE) %>% summarize(area = sum(area_ha_new))`, `r 51787 / fl.e$`2020` %>% st_drop_geometry() %>% filter(lu == "Land Converted to Flooded Land", type == "reservoir", name == "Minnesota") %>% select(name, COMID, contains("area"), contains("year", ignore.case = TRUE)) %>% distinct(COMID, .keep_all = TRUE) %>% summarize(area = sum(area_ha_new)) %>% pull()` percent of which is Mille Lacs lake.  North Dakota is the second largest source of CO2 and CH4 from reservoirs and inundated areas in LCFL,  `r fl.e$`2020` %>% st_drop_geometry() %>% filter(lu == "Land Converted to Flooded Land", type == "reservoir", name == "North Dakota") %>% select(name, COMID, contains("area"), contains("year", ignore.case = TRUE)) %>% slice_max(area_ha_new) %>% select(area_ha_new) %>% pull() / fl.e$`2020` %>% st_drop_geometry() %>% filter(lu == "Land Converted to Flooded Land", type == "reservoir", name == "North Dakota") %>% summarize(area=sum(area_ha_new)) %>% pull() `% of whcih
+Methane and CO2 flux from reservoirs and inundated areas in Minnesota was nearly 10-fold greater than any other state (Figure 2, Table x-x).  This is attributed to `r  fl.e$`2020` %>% st_drop_geometry() %>% filter(lu == "Land Converted to Flooded Land", type == "reservoir", name == "Minnesota") %>% select(name, COMID, contains("area"), contains("year", ignore.case = TRUE)) %>% summarize(n = length(unique(COMID))) ` dams which impound `r  fl.e$`2020` %>% st_drop_geometry() %>% filter(lu == "Land Converted to Flooded Land", type == "reservoir", name == "Minnesota") %>% select(name, COMID, contains("area"), contains("year", ignore.case = TRUE)) %>% distinct(COMID, .keep_all = TRUE) %>% summarize(area = sum(area_ha_new))`, `r 51787 / fl.e$`2020` %>% st_drop_geometry() %>% filter(lu == "Land Converted to Flooded Land", type == "reservoir", name == "Minnesota") %>% select(name, COMID, contains("area"), contains("year", ignore.case = TRUE)) %>% distinct(COMID, .keep_all = TRUE) %>% summarize(area = sum(area_ha_new)) %>% pull()` percent of which is Mille Lacs lake.  North Dakota is the second largest source of CO2 and CH4 from reservoirs and inundated areas in LCFL,  `r fl.e$`2020` %>% st_drop_geometry() %>% filter(lu == "Land Converted to Flooded Land", type == "reservoir", name == "North Dakota") %>% select(name, COMID, contains("area"), contains("year", ignore.case = TRUE)) %>% slice_max(area_ha_new) %>% select(area_ha_new) %>% pull() / fl.e$`2020` %>% st_drop_geometry() %>% filter(lu == "Land Converted to Flooded Land", type == "reservoir", name == "North Dakota") %>% summarize(area=sum(area_ha_new)) %>% pull() `%  percent of LCFL-reservoir surface area in North Dakota is attributed to Devils Lake.  
 
 
 #####FIGURE::  Aggregated reservoir emissions plotted by state.
@@ -1253,6 +1259,7 @@ fl.e$`2020` %>%
 
 
 #### Methodology
+##### Area estimates
 Flooded land age was determined from data in the NID when available (`r dplyr::bind_rows(nav, inund, res) %>% st_drop_geometry() %>% filter(!is.na(YEAR_COMPLETED)) %>% summarize(total.n = n()) %>% pull()` out of `r dplyr::bind_rows(nav, inund, res) %>% st_drop_geometry() %>% summarize(total.n = n()) %>% pull()`).  
 
 
@@ -1270,39 +1277,71 @@ fl.e[[1]] %>%
   pull() # million hectares
 ```
 
-
-#####surface are of reservoirs created between 1990 and 2000
+#####TABLE:: National Flooded Land Area for Reservoirs and Inundation Areas in LCFL
+The data generated below are pasted into the appropriate table in the report.
 ```{r}
+fl.cl.area.state.type %>%
+filter(type == "reservoir",
+         lu == "Land Converted to Flooded Land") %>%
+  select(subtype, matches(c("1990|2005|2016|2017|2018|2019|2020"))) %>%
+  group_by(subtype) %>%
+    summarize(across(contains("area"), ~sum(.)/1000)) %>%
+  arrange(desc(subtype))
+```
+
+#####FIGURE:: dams betwwen 1990 and 2000
+```{r}
+# Lots of screwing around with .pgn, .tiff, ggsave, etc to get this to look good in .doc
+
+
+tiff("output/figures/newDams.tiff", res = 800, compression = "lzw", width = 4.77/2, height = 4.99/2, units = "in")
 
 fl.e[[31]] %>% #2020  
   st_drop_geometry() %>% 
   as_tibble() %>%
-  filter(YEAR_COMPLETED >= 1990, YEAR_COMPLETED < 2020) %>%
+  filter(YEAR_COMPLETED >= 1990) %>%
   distinct(COMID, .keep_all = TRUE) %>% # possilbe duplication from intersection with state climate
   distinct(area_ha_original, .keep_all = TRUE) %>% #possilbe duplication from intersection with state climate
-  summarize(area.tot = sum(area_ha_original)/1000000) %>%
+group_by(YEAR_COMPLETED) %>%
+  summarize(n_year = n()) %>%
+  ggplot(., aes(YEAR_COMPLETED, n_year)) +
+  geom_point() +
+  geom_line(color = "steelblue") +
+  ylab("New dams") +
+  theme_bw() +
+  theme(axis.title.x = element_blank()) +
+  xlim(1990, 2020)
+
+dev.off()
+
+```
+
+
+#####surface ares of North Dakota reservoirs (LCFL) in 1990
+```{r}
+# Notably, this was the case for Lakes Sakakawea Oahe in North Dakota and South Dakota border.  Combined, these two reservoirs have a surface area in excess of 
+fl.e[[1]] %>%  
+  st_drop_geometry() %>% 
+  filter(lu == "Land Converted to Flooded Land",
+         COMID %in% c(19251179, 21543470, 21541960, 
+                      21529608, 21539872,120048827)) %>% # Oahe, Saskawea, Saskawea inundation area
+  distinct(area_ha_original) %>% # area repeated due to multipolygons from interstection with state
+  summarize(area.tot = sum(.)/1000000) %>%
   pull() # million hectares
 ```
 
-#####TABLE:: National Flooded Land Area for Reservoirs and Inundation Areas
+#####TABLE:: Flooded Land Area for LCFL Reservoirs and Inundation Areas by State
 ```{r}
+# paste into Word table
 fl.cl.area.state.type %>%
 filter(type == "reservoir",
-         lu == "Flooded Land Remaining Flooded Land") %>%
-  select(subtype, matches(c("1990|2005|2016|2017|2018|2019|2020"))) %>%
-  group_by(subtype) %>%
-    summarize(across(contains("area"), ~sum(.)/1000000)) %>%
-  arrange(desc(subtype))
-```
-
-#####TABLE:: Flooded Land Area for Reservoirs and Inundation Areas by State
-```{r}
-fl.cl.area.state.type %>%
-filter(type == "reservoir",
-         lu == "Flooded Land Remaining Flooded Land") %>%
+         lu == "Land Converted to Flooded Land") %>%
   select(name, type, matches(c("1990|2005|2016|2017|2018|2019|2020"))) %>%
   group_by(name) %>% # not differentiating by res vs inundation, table too long for report
-    summarize(across(contains("area"), ~sum(.)/1000000)) %>%
+    summarize(across(contains("area"), ~sum(.)/1000)) %>% #thousands of hectares
+   full_join(., state.names) %>%
+   mutate(across(everything(), ~replace_na(.x, 0))) %>% # replace NA with 0
+  arrange(name) %>%
   write.table(., "clipboard", row.names = FALSE)
   
 
@@ -1538,7 +1577,8 @@ EnvStats::rlnormTrunc(100,
                       min = 0.05, max = 0.22) %>% summary()
 # still too big.
 # can I define a log-normal distribution that approximates what is reported in 
-# IPCC 2019 Table 7.10?
+# IPCC 2019 Table 7.10?  After trying all these variations, sim0.085 was the
+# only one that produced a confidence interval containing the mean.
 sim1.3 <- rlnorm(100, meanlog = log(0.09), sdlog = log(1.3))
 sim1.4 <- rlnorm(100, meanlog = log(0.09), sdlog = log(1.4))
 sim1.5 <- rlnorm(100, meanlog = log(0.09), sdlog = log(1.5))
@@ -1546,7 +1586,7 @@ sim1.6 <- rlnorm(100, meanlog = log(0.09), sdlog = log(1.6))
 sim0.085 <- rlnorm(100, meanlog = log(0.085), sdlog = log(1.5))
 summary(sim1.3);summary(sim1.4);summary(sim1.5);summary(sim1.6)
 summary(sim0.085)
-plot(density(sim1.4)) # this seems pretty good
+
 
 
 
@@ -1577,12 +1617,12 @@ n.row.prior == nrow(fl.error)
 # Calculate emissions
 fl.error.list <- list()
 set.seed(3452) # make it reproducible
-for (i in 1:200) {
+for (i in 1:1000) { # 1000 simulations takes 50 seconds
   poo <- fl.error %>% 
     mutate(co2.tonnes.ha.y = runif(nrow(fl.error), co2.tonnes.ha.y.lwr, co2.tonnes.ha.y.upr),
            ch4.tonnes.ha.y = rnorm(nrow(fl.error), mean = ch4.tonnes.ha.y, sd = ch4.sd),
            # using rlnorm for downstream, see above.  mean of 0.085 needed to get lower
-           # confidence interval less than mean estimate
+           # confidence interval less than mean estimate.  true mean is 0.09
            dn.ef = rlnorm(nrow(fl.error), meanlog = log(0.085), sdlog = log(1.5)),
            area_ha_new = runif(nrow(fl.error), #15% error in area
                                min = area_ha_new - (area_ha_new*0.15), 
@@ -1604,6 +1644,7 @@ for (i in 1:200) {
 ### Table:: Uncertainty
 ```{r}
 # STEP 1:  Sum emissions for each iteration of above simulation
+# about 2 minutes with 1000 simulations
 ch4.co2.uncertainty <- lapply(fl.error.list, function(x) {
   x %>% 
     st_drop_geometry() %>%
@@ -1614,7 +1655,8 @@ ch4.co2.uncertainty <- lapply(fl.error.list, function(x) {
     summarize(ch4.surface.mmt.co2.eq.y = (sum(ch4.surface.tonnes.y , na.rm = TRUE)/1000000)*25, # surface CH4
               ch4.dn.mmt.co2.eq.y = (sum(ch4.dn.tonnes.y, na.rm = TRUE)/1000000)*25, # downstream CH4
               ch4.total.mmt.co2.eq.y = (sum(ch4.total.tonnes.y, na.rm = T)/1000000)*25, # total CH4
-              co2.mmt.co2.eq.y = sum(co2.tonnes.y, na.rm = TRUE)/1000000) # total CO2
+              co2.mmt.co2.eq.y = sum(co2.tonnes.y, na.rm = TRUE)/1000000) %>% # total CO2
+    mutate(ghg.total.mmt.co2.eq.y = co2.mmt.co2.eq.y + ch4.total.mmt.co2.eq.y)
   })
 
 
@@ -1637,16 +1679,18 @@ ch4.co2.mean.table <- fl.e$`2020` %>%
   mutate(subtype = ifelse(subtype == "inundation area", # not discriminating inundation and reservoir here
                           "reservoir",
                           subtype)) %>%
-  select(lu, subtype, ch4.surface.tonnes.y, ch4.dn.tonnes.y, ch4.total.tonnes.y, co2.tonnes.y) %>%
+  select(lu, subtype, ch4.surface.tonnes.y, ch4.dn.tonnes.y, 
+         ch4.total.tonnes.y, co2.tonnes.y) %>%
   group_by(lu, subtype) %>%
   summarize(ch4.surface.mmt.co2.eq.y = (sum(ch4.surface.tonnes.y)/1000000)*25, 
             ch4.dn.mmt.co2.eq.y = (sum(ch4.dn.tonnes.y)/1000000)*25,
             ch4.total.mmt.co2.eq.y = (sum(ch4.total.tonnes.y)/1000000)*25,
-            co2.mmt.co2.eq.y = sum(co2.tonnes.y)/1000000) 
+            co2.mmt.co2.eq.y = sum(co2.tonnes.y)/1000000,
+            ghg.total.mmt.co2.eq.y = co2.mmt.co2.eq.y + ch4.total.mmt.co2.eq.y) 
 
 
 # STEP 4: COMBINE MEAN AND UNCERTAINTY ESTIMATES
-bound.perc = function(x,y){((x - y)/y) *100}
+bound.perc = function(x,y){((x - y)/y) *100} # function for required fields
 
 ch4.co2.uncertainty.mean.table <- merge(ch4.co2.uncertainty.table, ch4.co2.mean.table) %>%
   mutate(upr.perc.ch4.surface = bound.perc(ch4.surface.mmt.co2.eq.y_max, 
@@ -1664,13 +1708,18 @@ ch4.co2.uncertainty.mean.table <- merge(ch4.co2.uncertainty.table, ch4.co2.mean.
          upr.perc.co2 = bound.perc(co2.mmt.co2.eq.y_max, 
                                            co2.mmt.co2.eq.y),
          lwr.perc.co2 = bound.perc(co2.mmt.co2.eq.y_min, 
-                                           co2.mmt.co2.eq.y)) %>%
+                                           co2.mmt.co2.eq.y),
+         upr.perc.ghg.total = bound.perc(ghg.total.mmt.co2.eq.y_max,
+                                         ghg.total.mmt.co2.eq.y),
+         lwr.perc.ghg.total = bound.perc(ghg.total.mmt.co2.eq.y_min,
+                                         ghg.total.mmt.co2.eq.y)) %>%
   relocate(lu, subtype, contains("surface"), contains("dn"), contains("total")) 
 
-
+###FLRFL TABLE
 # STEP 5: REPORT FOR RESERVOIR TABLE
 ch4.co2.uncertainty.mean.table %>% filter(lu == "Flooded Land Remaining Flooded Land",
                                           subtype == "reservoir")
+
 # STEP 6: REPORT FOR OTHER CONSTRUCTED WATERBODIES TABLE
 # canals and ditches / freshwater pond rows
 ch4.co2.uncertainty.mean.table %>% 
@@ -1689,6 +1738,12 @@ ch4.co2.uncertainty.mean.table %>%
          lwr.perc = bound.perc(ch4.total.mmt.co2.eq.y_min, 
                                            ch4.total.mmt.co2.eq.y))
 
+
+###LCFL TABLE
+# REPORT FOR RESERVOIR TABLE
+ch4.co2.uncertainty.mean.table %>% filter(lu == "Land Converted to Flooded Land",
+                                          subtype == "reservoir") %>% 
+  write.table(., "clipboard", row.names = FALSE)
 ```
 
 
