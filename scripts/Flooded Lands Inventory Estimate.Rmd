@@ -1159,7 +1159,7 @@ ggplot() +
 ggsave("output/figures/climateMapLCFL.tiff")
 ```
 
-Methane and CO2 flux from reservoirs and inundated areas in Minnesota was nearly 10-fold greater than any other state (Figure 2, Table x-x).  This is attributed to `r  fl.e$`2020` %>% st_drop_geometry() %>% filter(lu == "Land Converted to Flooded Land", type == "reservoir", name == "Minnesota") %>% select(name, COMID, contains("area"), contains("year", ignore.case = TRUE)) %>% summarize(n = length(unique(COMID))) ` dams which impound `r  fl.e$`2020` %>% st_drop_geometry() %>% filter(lu == "Land Converted to Flooded Land", type == "reservoir", name == "Minnesota") %>% select(name, COMID, contains("area"), contains("year", ignore.case = TRUE)) %>% distinct(COMID, .keep_all = TRUE) %>% summarize(area = sum(area_ha_new))`, `r 51787 / fl.e$`2020` %>% st_drop_geometry() %>% filter(lu == "Land Converted to Flooded Land", type == "reservoir", name == "Minnesota") %>% select(name, COMID, contains("area"), contains("year", ignore.case = TRUE)) %>% distinct(COMID, .keep_all = TRUE) %>% summarize(area = sum(area_ha_new)) %>% pull()` percent of which is Mille Lacs lake.  North Dakota is the second largest source of CO2 and CH4 from reservoirs and inundated areas in LCFL,  `r fl.e$`2020` %>% st_drop_geometry() %>% filter(lu == "Land Converted to Flooded Land", type == "reservoir", name == "North Dakota") %>% select(name, COMID, contains("area"), contains("year", ignore.case = TRUE)) %>% slice_max(area_ha_new) %>% select(area_ha_new) %>% pull() / fl.e$`2020` %>% st_drop_geometry() %>% filter(lu == "Land Converted to Flooded Land", type == "reservoir", name == "North Dakota") %>% summarize(area=sum(area_ha_new)) %>% pull() `%  percent of LCFL-reservoir surface area in North Dakota is attributed to Devils Lake.  
+Methane and CO2 flux from reservoirs and inundated areas in Minnesota was nearly 10-fold greater than any other state (Figure 2, Table x-x).  This is attributed to `r  fl.e$`2020` %>% st_drop_geometry() %>% filter(lu == "Land Converted to Flooded Land", type == "reservoir", name == "Minnesota") %>% select(name, COMID, contains("area"), contains("year", ignore.case = TRUE)) %>% summarize(n = length(unique(COMID))) ` dams which impound `r  fl.e$`2020` %>% st_drop_geometry() %>% filter(lu == "Land Converted to Flooded Land", type == "reservoir", name == "Minnesota") %>% select(name, COMID, contains("area"), contains("year", ignore.case = TRUE)) %>% distinct(COMID, .keep_all = TRUE) %>% summarize(area = sum(area_ha_new))` ha of water, `r 51787 / fl.e$`2020` %>% st_drop_geometry() %>% filter(lu == "Land Converted to Flooded Land", type == "reservoir", name == "Minnesota") %>% select(name, COMID, contains("area"), contains("year", ignore.case = TRUE)) %>% distinct(COMID, .keep_all = TRUE) %>% summarize(area = sum(area_ha_new)) %>% pull()` percent of which is Mille Lacs lake.  North Dakota is the second largest source of CO2 and CH4 from reservoirs and inundated areas in LCFL,  `r fl.e$`2020` %>% st_drop_geometry() %>% filter(lu == "Land Converted to Flooded Land", type == "reservoir", name == "North Dakota") %>% select(name, COMID, contains("area"), contains("year", ignore.case = TRUE)) %>% slice_max(area_ha_new) %>% select(area_ha_new) %>% pull() / fl.e$`2020` %>% st_drop_geometry() %>% filter(lu == "Land Converted to Flooded Land", type == "reservoir", name == "North Dakota") %>% summarize(area=sum(area_ha_new)) %>% pull() `%  percent of LCFL-reservoir surface area in North Dakota is attributed to Devils Lake.  
 
 
 #####FIGURE::  Aggregated reservoir emissions plotted by state.
@@ -1294,7 +1294,7 @@ filter(type == "reservoir",
 # Lots of screwing around with .pgn, .tiff, ggsave, etc to get this to look good in .doc
 
 
-tiff("output/figures/newDams.tiff", res = 800, compression = "lzw", width = 4.77/2, height = 4.99/2, units = "in")
+tiff("output/figures/newDams.tiff", res = 800, compression = "lzw", width = 4.77/1.8, height = 4.99/2, units = "in")
 
 fl.e[[31]] %>% #2020  
   st_drop_geometry() %>% 
@@ -1309,7 +1309,10 @@ group_by(YEAR_COMPLETED) %>%
   geom_line(color = "steelblue") +
   ylab("New dams") +
   theme_bw() +
-  theme(axis.title.x = element_blank()) +
+  theme(axis.title.x = element_blank(),
+        axis.text.x = element_text(angle = 90),
+        panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank()) +
   xlim(1990, 2020)
 
 dev.off()
@@ -1348,15 +1351,17 @@ filter(type == "reservoir",
 ```
 
 #### Other Constructed Waterbodies (Freshwater Ponds, Saline Ponds, Canals and Ditches)
-In 2019 the conterminous United States hosted `r fl.cl.area.state.type %>% filter(lu == "Flooded Land Remaining Flooded Land", type == "other constructed waterbodies") %>% group_by(subtype) %>% summarize(tot.area = sum(area2019))`  hectares of freshwater pond and `canals and ditches` surface area, respectively, in the Flooded Land Remaining Flooded Land category.    
+Activity data on pond salinity is not uniformly available for the conterminous U.S. and all `r fl.cl.area.state.type %>% filter(lu == "Land Converted to Flooded Land", type == "other constructed waterbodies") %>% group_by(subtype) %>% summarize(tot.area = sum(area2019))` ha of ponds in the inventory are assumed to be freshwater.   
 
 ##### Emissions and Removals from Land Converted to Flooded Land - Other Constructed Waterbodies
 ###### TABLE:: National level CH4 flux table
-National level CH4 flux tables in the text are pulled from 'tables' tab of Excel file.  Table reconstructed below as a check against Excel calcs.
+National level GHG flux tables in the text are pulled from 'tables' tab of Excel file.  Table reconstructed below as a check against Excel calcs.
 ```{r}
-# FLRFL-other constructed waterbodies ch4 total emissions table National
-# fluxes reported in ktonnes per year
-flrfl.ch4.national.subtype.l %>% 
+# LCFL-other constructed waterbodies total GHG emissions table National
+
+
+# CH4 table first
+lcfl.ghg.national.subtype.l %>% 
   reduce(full_join) %>% # merge all elements of list into single df.
   select(subtype, contains("ch4.total")) %>% # only interested in total for other...
   filter(subtype %in% c("canals and ditches", "freshwater pond")) %>%
@@ -1366,94 +1371,122 @@ flrfl.ch4.national.subtype.l %>%
                        stop = nchar(flux.type))) %>%
   select(-flux.type) %>%
   pivot_wider(names_from = year, values_from = flux) 
+
+
+# CO2 table next
+lcfl.ghg.national.subtype.l %>% 
+  reduce(full_join) %>% # merge all elements of list into single df.
+  select(subtype, contains("co2.mmt.")) %>% # only interested in total for other...
+  filter(subtype %in% c("canals and ditches", "freshwater pond")) %>%
+  pivot_longer(!subtype, names_to = "flux.type", values_to = "flux") %>%
+  mutate(year = substr(flux.type, 
+                       start = nchar(flux.type) - 3, 
+                       stop = nchar(flux.type))) %>%
+  select(-flux.type) %>%
+  pivot_wider(names_from = year, values_from = flux) 
 ```
-###### TABLE:: State level CH4 flux table
-State level CH4 flux tables are not compiled in Excel.  Table written to clipboard below, pasted and formated in inventoryReportTablesFormattedFromR.xlsx, then pasted into report table.
+
+###### TABLE:: State level GHG flux table
+State level GHG flux tables are not compiled in Excel.  Table written to clipboard below, pasted and formated in inventoryReportTablesFormattedFromR.xlsx, then pasted into report table.
 ```{r}
-# FLRFL-other constructed waterbodies ch4 total emissions table by state
-# fluxes reported in ktonnes per year
+# LCFL-other constructed waterbodies GHG total emissions table by state
 
 # STEP 1: STATE BY STATE TABLE
-flrfl.ocwb.ch4.state <- fl.e$`2020` %>%  
+lcfl.ocwb.ghg.state <- fl.e$`2020` %>%  
   st_drop_geometry() %>%
   filter(type == "other constructed waterbodies",
-         lu == "Flooded Land Remaining Flooded Land") %>%
-  select(name, subtype, ch4.total.tonnes.y) %>%
+         lu == "Land Converted to Flooded Land") %>%
+  select(name, subtype, contains("tonnes.y")) %>%
   group_by(name, subtype) %>%
-  summarize(ch4.total.tonnes.y = sum(ch4.total.tonnes.y)) %>%
+  summarize(ch4.total.tonnes.co2.eq.y = sum(ch4.total.tonnes.y) * 25,
+            co2.tonnes.y = sum(co2.tonnes.y)) %>%
   pivot_wider(names_from = subtype, 
-              values_from = ch4.total.tonnes.y,
+              values_from = c(ch4.total.tonnes.co2.eq.y, co2.tonnes.y),
               values_fill = 0) %>% # replace NA with 0
-  mutate(total = `canals and ditches` + `freshwater pond`) %>%
-  mutate(across(where(is.numeric), ~.x/1000)) # tonnes to ktonnes
+  mutate(total = `ch4.total.tonnes.co2.eq.y_freshwater pond` + 
+           `co2.tonnes.y_freshwater pond`) %>%
+  full_join(., state.names) %>%
+  arrange(name) %>%
+  mutate(across(where(is.numeric), ~replace_na(., 0)))
 
 
 # STEP 2: NATIONAL TOTALS
-flrfl.ocwb.ch4.totals <- fl.e$`2020` %>%  
+lcfl.ocwb.ghg.totals <- fl.e$`2020` %>%  
   st_drop_geometry() %>%
   filter(type == "other constructed waterbodies",
-         lu == "Flooded Land Remaining Flooded Land") %>%
-  select(subtype, ch4.total.tonnes.y) %>%
+         lu == "Land Converted to Flooded Land") %>%
+  select(subtype, contains("tonnes.y")) %>%
   group_by(subtype) %>%
-  summarize(ch4.total.tonnes.y = sum(ch4.total.tonnes.y)) %>%
+  summarize(ch4.total.tonnes.co2.eq.y = sum(ch4.total.tonnes.y) * 25,
+            co2.tonnes.y = sum(co2.tonnes.y)) %>%
   pivot_wider(names_from = subtype, 
-              values_from = ch4.total.tonnes.y,
+              values_from = c(ch4.total.tonnes.co2.eq.y, co2.tonnes.y),
               values_fill = 0) %>% # replace NA with 0
-  mutate(total = `canals and ditches` + `freshwater pond`,
-         name = "TOTAL") %>% # to match formatting in Word table
-  mutate(across(where(is.numeric), ~.x/1000)) # tonnes to ktonnes
+    mutate(total = `ch4.total.tonnes.co2.eq.y_freshwater pond` + 
+           `co2.tonnes.y_freshwater pond`) %>%
+  mutate(name = "TOTAL") %>% # to match formatting in Word table
+  relocate(name)
+
 
 # STEP 3: MERGE STATE TABLE WITH TOTALS
-rbind(flrfl.ocwb.ch4.state, flrfl.ocwb.ch4.totals) %>% 
+rbind(lcfl.ocwb.ghg.state, lcfl.ocwb.ghg.totals) %>% 
+  # IPCC required formatting.  No values meet criteria, so not
+  # actually needed now.
+  mutate(across(where(is.numeric), ~ifelse(.x > 0 & .x < 0.05,
+                                           "+", 
+                                           .x))) %>%
   write.table(., "clipboard", row.names = FALSE)
 ```
 
 ###### FIGURE:: Emissions by state
-Over 50% of CH4 from canals and ditches is from Louisiana.
+
 ```{r}
 
 # add emissions data to object
-us.plot.flrfl.total.ch4.2020.ocwb <- merge(us.plot, 
-                                                flrfl.ocwb.ch4.state) 
+us.plot.lcfl.total.ghg.2020.ocwb <- merge(us.plot, 
+                                                lcfl.ocwb.ghg.state) 
 
 
-p1 <- ggplot(us.plot.flrfl.total.ch4.2020.ocwb) +
-  geom_sf(aes(fill = `canals and ditches`)) +
-  scale_fill_distiller(expression(kt~CH[4]~y^-1), 
+p1 <- ggplot(us.plot.lcfl.total.ghg.2020.ocwb) +
+  geom_sf(aes(fill = `co2.tonnes.y_freshwater pond`)) +
+  scale_fill_distiller(expression(tonnes~CO[2]~Eq.~y^-1), 
                        palette = "Blues", direction = -1) +
   coord_sf(datum = NA) + # this removes grid lines.
-  ggtitle(expression(A.~CH[4]~Flux~from~Canals~and~Ditches)) +
+  ggtitle(expression(~A.~CO[2]~Flux~from~Freshwater~Ponds)) +
   theme(panel.background = element_blank(),
         title = element_text(size = 8))
 
 
 
-p2 <- ggplot(us.plot.flrfl.total.ch4.2020.ocwb) +
-  geom_sf(aes(fill = `freshwater pond`)) +
-  scale_fill_distiller(expression(kt~CH[4]~y^-1), 
+p2 <- ggplot(us.plot.lcfl.total.ghg.2020.ocwb) +
+  geom_sf(aes(fill = `ch4.total.tonnes.co2.eq.y_freshwater pond`)) +
+  scale_fill_distiller(expression(tonnes~CO[2]~Eq.~y^-1), 
                        palette = "Blues", direction = -1) +
   coord_sf(datum = NA) + # this removes grid lines.
   ggtitle(expression(B.~CH[4]~Flux~from~Freshwater~Ponds)) +
   theme(panel.background = element_blank(),
         title = element_text(size = 8))
 
-g <- plot_grid(p1, p2, nrow=1, ncol=2)
+# having trouble with ggsave
+tiff("output/figures/LCFL.ocwb.2020.ghg.tiff", res = 800, compression = "lzw", width = 4.77*2, height = 4.49*2, units = "in")
 
+plot_grid(p1, p2, nrow=1, ncol=2)
 
-ggsave("output/figures/FLRFL.ocwb.2020.Tch4.tiff", g)
+dev.off()
+
 ```
 
 
 #### Methodology
 
 ##### Area
-For the year 2020, this inventory contains `r fl.cl.area.state.type  %>%  filter(lu == "Flooded Land Remaining Flooded Land", subtype == "freshwater pond") %>% summarize(area2020 = sum(area2020)) %>% pull()` ha of freshwater ponds and `r fl.cl.area.state.type  %>%  filter(lu == "Flooded Land Remaining Flooded Land", subtype == "canals and ditches") %>% summarize(area2020 = sum(area2020)) %>% pull()` ha of canals and ditches in Flooded Land Remaining Flooded Land.
+For the year 2020, this inventory contains `r fl.cl.area.state.type  %>%  filter(lu == "Land Converted to Flooded Land", subtype == "freshwater pond") %>% summarize(area2020 = sum(area2020)) %>% pull()` ha of freshwater ponds and `r fl.cl.area.state.type  %>%  filter(lu == "Land Converted to Flooded Land", subtype == "canals and ditches") %>% summarize(area2020 = sum(area2020)) %>% pull()` ha of canals and ditches in Flooded Land Remaining Flooded Land.
 
 ######TABLE:: National Flooded Land Area for Other Constructed Waterbodies
 ```{r}
 fl.cl.area.state.type %>%
 filter(type == "other constructed waterbodies",
-         lu == "Flooded Land Remaining Flooded Land") %>%
+         lu == "Land Converted to Flooded Land") %>%
   select(subtype, matches(c("1990|2005|2016|2017|2018|2019|2020"))) %>%
   group_by(subtype) %>%
     summarize(across(contains("area"), sum)) %>%
@@ -1466,58 +1499,50 @@ Canals and ditches in the contimernos U.S. are most abundant in the Gulf Coast s
 
 ```{r}
 # construct other constructed waterbodies surface area table
-flrfl.ocwb.area <- fl.cl.area.state.type %>%
+lcfl.ocwb.area <- fl.cl.area.state.type %>%
   filter(type == "other constructed waterbodies",
-         lu == "Flooded Land Remaining Flooded Land") %>%
+         lu == "Land Converted to Flooded Land") %>%
   select(name, subtype, area2020) %>%
   group_by(name, subtype) %>% # not differentiating by pond vs canals, table too long for report
   summarize(across(contains("area"), ~sum(.))) %>%
   pivot_wider(names_from = subtype, 
               values_from = area2020,
-              values_fill = 0)
+              values_fill = 0) %>%
+  full_join(., state.names) %>%
+  arrange(name) %>%
+  mutate(across(where(is.numeric), ~replace_na(., 0)))
 
 
 # add emissions data to object
-us.plot.flrfl.area.2020.ocwb <- merge(us.plot, flrfl.ocwb.area) 
+us.plot.lcfl.area.2020.ocwb <- merge(us.plot, lcfl.ocwb.area) 
 
 
-p1 <- ggplot(us.plot.flrfl.area.2020.ocwb) +
-  geom_sf(aes(fill = `canals and ditches`)) +
-  scale_fill_distiller("hectares", 
-                       labels=function(x) format(x, big.mark = ",", scientific = FALSE),
-                       palette = "Blues", direction = -1) +
-  coord_sf(datum = NA) + # this removes grid lines.
-  ggtitle(expression(A.~Area~of~Canals~and~Ditches)) +
-  theme(panel.background = element_blank(),
-        title = element_text(size = 8))
-
-
-
-p2 <- ggplot(us.plot.flrfl.area.2020.ocwb) +
+ggplot(us.plot.lcfl.area.2020.ocwb) +
   geom_sf(aes(fill = `freshwater pond`)) +
   scale_fill_distiller("hectares", 
                        labels=function(x) format(x, big.mark = ",", scientific = FALSE),
                        palette = "Blues", direction = -1) +
   coord_sf(datum = NA) + # this removes grid lines.
-  ggtitle(expression(B.~Area~of~Freshwater~Ponds)) +
+  ggtitle(expression(~Area~of~Freshwater~Ponds)) +
   theme(panel.background = element_blank(),
         title = element_text(size = 8))
 
-
-g <- plot_grid(p1, p2, nrow=1, ncol=2)
-
-
-ggsave("output/figures/FLRFL.ocwb.2020.area.tiff", g)
+ggsave("output/figures/LCFL.ocwb.2020.area.tiff")
 ```
 
 ######TABLE:: Flooded Land Area for Other Constructed Waterbodies by State
+Table written to clipboard, pasted and formatted in Excel, then pasted into Word.  Yuck!
 ```{r}
+
 fl.cl.area.state.type %>%
 filter(type == "other constructed waterbodies",
-         lu == "Flooded Land Remaining Flooded Land") %>%
+         lu == "Land Converted to Flooded Land") %>%
   select(name, type, matches(c("1990|2005|2016|2017|2018|2019|2020"))) %>%
   group_by(name) %>% # not differentiating by pond vs canals, table too long for report
     summarize(across(contains("area"), ~sum(.))) %>%
+   full_join(., state.names) %>%
+  arrange(name) %>%
+  mutate(across(where(is.numeric), ~replace_na(., 0))) %>%
   write.table(., "clipboard", row.names = FALSE)
   
 
@@ -1743,6 +1768,13 @@ ch4.co2.uncertainty.mean.table %>%
 # REPORT FOR RESERVOIR TABLE
 ch4.co2.uncertainty.mean.table %>% filter(lu == "Land Converted to Flooded Land",
                                           subtype == "reservoir") %>% 
+  write.table(., "clipboard", row.names = FALSE)
+
+
+# REPORT FOR OTHER CONSTRUCTED WATERBODIES
+ch4.co2.uncertainty.mean.table %>% 
+  filter(lu == "Land Converted to Flooded Land",
+         subtype %in% c("freshwater pond", "canals and ditches")) %>% 
   write.table(., "clipboard", row.names = FALSE)
 ```
 
