@@ -601,222 +601,222 @@ openxlsx::saveWorkbook(wb, file, overwrite = TRUE) ## save changes to excel
 
 
 ### DEPRECATED------------------------
-### Code for writing out nationally aggregated data to Excel.  This output is
-### not required per Wirth.  Also, code written with xlsx package which
-### can give memory issues.  Keeping this code around for now, but may delete
-### later.
-file.nat <- "output/outputTablesNational.xlsx"
-wb.nat <- xlsx::loadWorkbook(file.nat) # load file for further processing
-sheets <- xlsx::getSheets(wb.nat)
-numberColTSC <- 36 # This setting is for objects aggregated by type, state, and climate
-numberColLTSC <- 37 # This setting is for objects aggregated by land use, type, state, and climate
+# ### Code for writing out nationally aggregated data to Excel.  This output is
+# ### not required per Wirth.  Also, code written with xlsx package which
+# ### can give memory issues.  Keeping this code around for now, but may delete
+# ### later.
+# file.nat <- "output/outputTablesNational.xlsx"
+# wb.nat <- xlsx::loadWorkbook(file.nat) # load file for further processing
+# sheets <- xlsx::getSheets(wb.nat)
+# numberColTSC <- 36 # This setting is for objects aggregated by type, state, and climate
+# numberColLTSC <- 37 # This setting is for objects aggregated by land use, type, state, and climate
+# 
+# 
+# # numeric formatting
+# dataFormatNumberD <- DataFormat("#,##0") # thousands separator, no decimals
+# cslistTSC <- lapply(4:numberColTSC, function(x){CellStyle(wb.nat) + dataFormatNumberD})
+# cslistLTSC <- lapply(5:numberColLTSC, function(x){CellStyle(wb.nat) + dataFormatNumberD})
+# 
+# # Formatting for totals row
+# fillSecondary <- Fill('#ff6666','#ff6666','SOLID_FOREGROUND') #fill color
+# createFonts <- function(wb) {list(data = Font(wb.nat, isBold = TRUE))} # bold font
+# f <- createFonts(wb.nat) # bold font
+# 
+# # Add data to excel file
+# # FLRFL surface area aggregated by state, climate, type, 
+# addDataFrame(x = fl.cl.area.state.type %>% 
+#                filter(lu == "Flooded Land Remaining Flooded Land") %>%
+#                select(-lu, -contains("co2")),  
+#              sheet = sheets[]$`7.3.1_FLRFL_allCalcs`, # pull name from list
+#              row.names = FALSE, col.names = FALSE,
+#              startRow = 6, startColumn = 1,
+#              # apply number formatting
+#              colStyle = setNames(cslistTSC, 4:(numberColTSC-2))) # -2 select our lu and co2
+# 
+# addDataFrame(x = fl.cl.area.state.type %>% 
+#                filter(lu == "Flooded Land Remaining Flooded Land")%>%
+#                select_if(~is.numeric(.)) %>%
+#                select(!contains("tonnes")) %>%
+#                # https://stackoverflow.com/questions/28873057/sum-across-multiple-columns-with-dplyr
+#                summarise(across(everything(), ~sum(., is.na(.), 0))),  # col sums
+#              sheet = sheets[]$`7.3.1_FLRFL_allCalcs`, # names are weird, pull from list
+#              row.names = FALSE, col.names = FALSE,
+#              startRow = nrow(fl.cl.area.state.type %>% 
+#                filter(lu == "Flooded Land Remaining Flooded Land")) + 6, # +6 space on top
+#              startColumn = 4, # start under first numeric column
+#              colStyle = setNames(lapply(cslistTSC, function(x){
+#                x + fillSecondary + f$data}), 1:31)) # 31 colums
+# 
+# 
+# 
+# # Reset these formatting specifics for more coarsly aggregated data below
+# numberCol <- 32 # all data object have type, state, and 30 years, for a total of 32 columns
+# 
+# # numeric formatting
+# dataFormatNumberD <- DataFormat("#,##0") # thousands separator, no decimals
+# cslist <- lapply(3:numberCol, function(x){CellStyle(wb.nat) + dataFormatNumberD})
+# 
+# # Formatting for totals row
+# fillSecondary <- Fill('#ff6666','#ff6666','SOLID_FOREGROUND') #fill color
+# createFonts <- function(wb.nat) {list(data = Font(wb.nat, isBold = TRUE))} # bold font
+# f <- createFonts(wb.nat) # bold font
+# 
+# 
+# # FLRFL area
+# addDataFrame(x = flrfl.area.state.type,  
+#              sheet = sheets[]$`7.3.1_FLRFL_area`, # pull name from list
+#              row.names = FALSE, col.names = FALSE,
+#              startRow = 6, startColumn = 1,
+#              colStyle = setNames(cslist,3:numberCol))
+# addDataFrame(x = flrfl.area.state.type %>% select_if(~is.numeric(.)) %>%
+#                # https://stackoverflow.com/questions/28873057/sum-across-multiple-columns-with-dplyr
+#                summarise(across(everything(), ~sum(., is.na(.), 0))),  # col sums
+#                sheet = sheets[]$`7.3.1_FLRFL_area`, # names are weird, pull from list
+#              row.names = FALSE, col.names = FALSE,
+#              startRow = nrow(flrfl.area.state.type) + 6, # +6 space on top
+#              startColumn = 3, # start under first numeric column
+#              colStyle = setNames(lapply(cslist, function(x){x + fillSecondary + f$data}), 1:30))
+# 
+# 
+# # FLRFL downstream CH4
+# addDataFrame(x = flrfl.dn.ch4.state.type,  
+#              sheet = sheets[]$`7.3.1_FLRFL_dnCh4`, # pull name from list
+#              row.names = FALSE, col.names = FALSE,
+#              startRow = 6, startColumn = 1,
+#              colStyle = setNames(cslist,3:numberCol))
+# addDataFrame(x = flrfl.dn.ch4.state.type %>% select_if(~is.numeric(.)) %>%
+#                # https://stackoverflow.com/questions/28873057/sum-across-multiple-columns-with-dplyr
+#                summarise(across(everything(), ~sum(., is.na(.), 0))),  # col sums
+#              sheet = sheets[]$`7.3.1_FLRFL_dnCh4`, # names are weird, pull from list
+#              row.names = FALSE, col.names = FALSE,
+#              startRow = nrow(flrfl.dn.ch4.state.type) + 6, # +6 space on top
+#              startColumn = 3, # start under first numeric column
+#              colStyle = setNames(lapply(cslist, function(x){x + fillSecondary + f$data}), 1:30))
+# 
+# 
+# # FLRFL surface CH4
+# addDataFrame(x = flrfl.surface.ch4.state.type,  
+#              sheet = sheets[]$`7.3.1_FLRFL_surfCh4`, # pull name from list
+#              row.names = FALSE, col.names = FALSE,
+#              startRow = 6, startColumn = 1,
+#              colStyle = setNames(cslist,3:numberCol))
+# addDataFrame(x = flrfl.surface.ch4.state.type %>% select_if(~is.numeric(.)) %>%
+#                # https://stackoverflow.com/questions/28873057/sum-across-multiple-columns-with-dplyr
+#                summarise(across(everything(), ~sum(., is.na(.), 0))),  # col sums
+#              sheet = sheets[]$`7.3.1_FLRFL_surfCh4`, # names are weird, pull from list
+#              row.names = FALSE, col.names = FALSE,
+#              startRow = nrow(flrfl.surface.ch4.state.type) + 6, # +6 space on top
+#              startColumn = 3, # start under first numeric column
+#              colStyle = setNames(lapply(cslist, function(x){x + fillSecondary + f$data}), 1:30))
+# 
+# 
+# # FLRFL total CH4
+# addDataFrame(x = flrfl.total.ch4.state.type,  
+#              sheet = sheets[]$`7.3.1_FLRFL_totCh4`, # pull name from list
+#              row.names = FALSE, col.names = FALSE,
+#              startRow = 6, startColumn = 1,
+#              colStyle = setNames(cslist,3:numberCol))
+# addDataFrame(x = flrfl.total.ch4.state.type %>% select_if(~is.numeric(.)) %>%
+#                # https://stackoverflow.com/questions/28873057/sum-across-multiple-columns-with-dplyr
+#                summarise(across(everything(), ~sum(., is.na(.), 0))),  # col sums
+#              sheet = sheets[]$`7.3.1_FLRFL_totCh4`, # names are weird, pull from list
+#              row.names = FALSE, col.names = FALSE,
+#              startRow = nrow(flrfl.total.ch4.state.type) + 6, # +6 space on top
+#              startColumn = 3, # start under first numeric column
+#              colStyle = setNames(lapply(cslist, function(x){x + fillSecondary + f$data}), 1:30))
+# 
+# 
+# # LCFL area
+# addDataFrame(x = lcfl.area.state.type,  
+#              sheet = sheets[]$`7.3.2_LCFL_area`,
+#              row.names = FALSE, col.names = FALSE,
+#              startRow = 6, startColumn = 1,
+#              colStyle = setNames(cslist,3:numberCol))
+# addDataFrame(x = lcfl.area.state.type %>% select_if(~is.numeric(.)) %>%
+#                # https://stackoverflow.com/questions/28873057/sum-across-multiple-columns-with-dplyr
+#                summarise(across(everything(), ~sum(., is.na(.), 0))),  # col sums
+#              sheet = sheets[]$`7.3.2_LCFL_area`, # names are weird, pull from list
+#              row.names = FALSE, col.names = FALSE,
+#              startRow = nrow(lcfl.area.state.type) + 6, # +6 space on top
+#              startColumn = 3, # start under first numeric column
+#              colStyle = setNames(lapply(cslist, function(x){x + fillSecondary + f$data}), 1:30))
+# 
+# 
+# # LCFL downstream CH4
+# addDataFrame(x = lcfl.dn.ch4.state.type,  
+#              sheet = sheets[]$`7.3.2_LCFL_dnCh4`, # pull name from list
+#              row.names = FALSE, col.names = FALSE,
+#              startRow = 6, startColumn = 1,
+#              colStyle = setNames(cslist,3:numberCol))
+# addDataFrame(x = lcfl.dn.ch4.state.type %>% select_if(~is.numeric(.)) %>%
+#                # https://stackoverflow.com/questions/28873057/sum-across-multiple-columns-with-dplyr
+#                summarise(across(everything(), ~sum(., is.na(.), 0))),  # col sums
+#              sheet = sheets[]$`7.3.2_LCFL_dnCh4`, # names are weird, pull from list
+#              row.names = FALSE, col.names = FALSE,
+#              startRow = nrow(lcfl.dn.ch4.state.type) + 6, # +6 space on top
+#              startColumn = 3, # start under first numeric column
+#              colStyle = setNames(lapply(cslist, function(x){x + fillSecondary + f$data}), 1:30))
+# 
+# # LCFL surface CH4
+# addDataFrame(x = lcfl.surface.ch4.state.type,  
+#              sheet = sheets[]$`7.3.2_LCFL_surfCh4`, # pull name from list
+#              row.names = FALSE, col.names = FALSE,
+#              startRow = 6, startColumn = 1,
+#              colStyle = setNames(cslist,3:numberCol))
+# addDataFrame(x = lcfl.surface.ch4.state.type %>% select_if(~is.numeric(.)) %>%
+#                # https://stackoverflow.com/questions/28873057/sum-across-multiple-columns-with-dplyr
+#                summarise(across(everything(), ~sum(., is.na(.), 0))),  # col sums
+#              sheet = sheets[]$`7.3.2_LCFL_surfCh4`, # names are weird, pull from list
+#              row.names = FALSE, col.names = FALSE,
+#              startRow = nrow(lcfl.surface.ch4.state.type) + 6, # +6 space on top
+#              startColumn = 3, # start under first numeric column
+#              colStyle = setNames(lapply(cslist, function(x){x + fillSecondary + f$data}), 1:30))
+# 
+# 
+# # LCFL total CH4
+# addDataFrame(x = lcfl.total.ch4.state.type,  
+#              sheet = sheets[]$`7.3.2_LCFL_totCh4`, # pull name from list
+#              row.names = FALSE, col.names = FALSE,
+#              startRow = 6, startColumn = 1,
+#              colStyle = setNames(cslist, 3:numberCol))
+# 
+# addDataFrame(x = lcfl.total.ch4.state.type %>% select_if(~is.numeric(.)) %>%
+#                # https://stackoverflow.com/questions/28873057/sum-across-multiple-columns-with-dplyr
+#                summarise(across(everything(), ~sum(., is.na(.), 0))),  # col sums
+#                sheet = sheets[]$`7.3.2_LCFL_totCh4`, # names are weird, pull from list
+#              row.names = FALSE, col.names = FALSE,
+#              startRow = nrow(lcfl.total.ch4.state.type) + 6, # +6 space on top
+#              startColumn = 3, # start under first numeric column
+#              colStyle = setNames(lapply(cslist, function(x){x + fillSecondary + f$data}), 1:30)
+# )
+# 
+# 
+# # LCFL CO2
+# addDataFrame(x = lcfl.co2.state.type,  
+#              sheet = sheets[]$`7.3.2_LCFL_Co2`, # pull name from list
+#              row.names = FALSE, col.names = FALSE,
+#              startRow = 6, startColumn = 1,
+#              colStyle = setNames(cslist,3:numberCol))
+# 
+# addDataFrame(x = lcfl.co2.state.type %>% select_if(~is.numeric(.)) %>%
+#                # https://stackoverflow.com/questions/28873057/sum-across-multiple-columns-with-dplyr
+#                summarise(across(everything(), ~sum(., is.na(.), 0))),  # col sums
+#              sheet = sheets[]$`7.3.2_LCFL_Co2`, # names are weird, pull from list
+#              row.names = FALSE, col.names = FALSE,
+#              startRow = nrow(lcfl.co2.state.type) + 6, #  +6 space on top
+#              startColumn = 3, # start under first numeric column
+#              colStyle = setNames(lapply(cslist, function(x){x + fillSecondary + f$data}), 1:30)
+# )
+# 
+# 
+# 
+# #setForceFormulaRecalculation(wb,"data",TRUE)
+# wb.nat$setForceFormulaRecalculation(TRUE)
+# saveWorkbook(wb.nat, file.nat)
 
 
-# numeric formatting
-dataFormatNumberD <- DataFormat("#,##0") # thousands separator, no decimals
-cslistTSC <- lapply(4:numberColTSC, function(x){CellStyle(wb.nat) + dataFormatNumberD})
-cslistLTSC <- lapply(5:numberColLTSC, function(x){CellStyle(wb.nat) + dataFormatNumberD})
-
-# Formatting for totals row
-fillSecondary <- Fill('#ff6666','#ff6666','SOLID_FOREGROUND') #fill color
-createFonts <- function(wb) {list(data = Font(wb.nat, isBold = TRUE))} # bold font
-f <- createFonts(wb.nat) # bold font
-
-# Add data to excel file
-# FLRFL surface area aggregated by state, climate, type, 
-addDataFrame(x = fl.cl.area.state.type %>% 
-               filter(lu == "Flooded Land Remaining Flooded Land") %>%
-               select(-lu, -contains("co2")),  
-             sheet = sheets[]$`7.3.1_FLRFL_allCalcs`, # pull name from list
-             row.names = FALSE, col.names = FALSE,
-             startRow = 6, startColumn = 1,
-             # apply number formatting
-             colStyle = setNames(cslistTSC, 4:(numberColTSC-2))) # -2 select our lu and co2
-
-addDataFrame(x = fl.cl.area.state.type %>% 
-               filter(lu == "Flooded Land Remaining Flooded Land")%>%
-               select_if(~is.numeric(.)) %>%
-               select(!contains("tonnes")) %>%
-               # https://stackoverflow.com/questions/28873057/sum-across-multiple-columns-with-dplyr
-               summarise(across(everything(), ~sum(., is.na(.), 0))),  # col sums
-             sheet = sheets[]$`7.3.1_FLRFL_allCalcs`, # names are weird, pull from list
-             row.names = FALSE, col.names = FALSE,
-             startRow = nrow(fl.cl.area.state.type %>% 
-               filter(lu == "Flooded Land Remaining Flooded Land")) + 6, # +6 space on top
-             startColumn = 4, # start under first numeric column
-             colStyle = setNames(lapply(cslistTSC, function(x){
-               x + fillSecondary + f$data}), 1:31)) # 31 colums
 
 
-
-# Reset these formatting specifics for more coarsly aggregated data below
-numberCol <- 32 # all data object have type, state, and 30 years, for a total of 32 columns
-
-# numeric formatting
-dataFormatNumberD <- DataFormat("#,##0") # thousands separator, no decimals
-cslist <- lapply(3:numberCol, function(x){CellStyle(wb.nat) + dataFormatNumberD})
-
-# Formatting for totals row
-fillSecondary <- Fill('#ff6666','#ff6666','SOLID_FOREGROUND') #fill color
-createFonts <- function(wb.nat) {list(data = Font(wb.nat, isBold = TRUE))} # bold font
-f <- createFonts(wb.nat) # bold font
-
-
-# FLRFL area
-addDataFrame(x = flrfl.area.state.type,  
-             sheet = sheets[]$`7.3.1_FLRFL_area`, # pull name from list
-             row.names = FALSE, col.names = FALSE,
-             startRow = 6, startColumn = 1,
-             colStyle = setNames(cslist,3:numberCol))
-addDataFrame(x = flrfl.area.state.type %>% select_if(~is.numeric(.)) %>%
-               # https://stackoverflow.com/questions/28873057/sum-across-multiple-columns-with-dplyr
-               summarise(across(everything(), ~sum(., is.na(.), 0))),  # col sums
-               sheet = sheets[]$`7.3.1_FLRFL_area`, # names are weird, pull from list
-             row.names = FALSE, col.names = FALSE,
-             startRow = nrow(flrfl.area.state.type) + 6, # +6 space on top
-             startColumn = 3, # start under first numeric column
-             colStyle = setNames(lapply(cslist, function(x){x + fillSecondary + f$data}), 1:30))
-
-
-# FLRFL downstream CH4
-addDataFrame(x = flrfl.dn.ch4.state.type,  
-             sheet = sheets[]$`7.3.1_FLRFL_dnCh4`, # pull name from list
-             row.names = FALSE, col.names = FALSE,
-             startRow = 6, startColumn = 1,
-             colStyle = setNames(cslist,3:numberCol))
-addDataFrame(x = flrfl.dn.ch4.state.type %>% select_if(~is.numeric(.)) %>%
-               # https://stackoverflow.com/questions/28873057/sum-across-multiple-columns-with-dplyr
-               summarise(across(everything(), ~sum(., is.na(.), 0))),  # col sums
-             sheet = sheets[]$`7.3.1_FLRFL_dnCh4`, # names are weird, pull from list
-             row.names = FALSE, col.names = FALSE,
-             startRow = nrow(flrfl.dn.ch4.state.type) + 6, # +6 space on top
-             startColumn = 3, # start under first numeric column
-             colStyle = setNames(lapply(cslist, function(x){x + fillSecondary + f$data}), 1:30))
-
-
-# FLRFL surface CH4
-addDataFrame(x = flrfl.surface.ch4.state.type,  
-             sheet = sheets[]$`7.3.1_FLRFL_surfCh4`, # pull name from list
-             row.names = FALSE, col.names = FALSE,
-             startRow = 6, startColumn = 1,
-             colStyle = setNames(cslist,3:numberCol))
-addDataFrame(x = flrfl.surface.ch4.state.type %>% select_if(~is.numeric(.)) %>%
-               # https://stackoverflow.com/questions/28873057/sum-across-multiple-columns-with-dplyr
-               summarise(across(everything(), ~sum(., is.na(.), 0))),  # col sums
-             sheet = sheets[]$`7.3.1_FLRFL_surfCh4`, # names are weird, pull from list
-             row.names = FALSE, col.names = FALSE,
-             startRow = nrow(flrfl.surface.ch4.state.type) + 6, # +6 space on top
-             startColumn = 3, # start under first numeric column
-             colStyle = setNames(lapply(cslist, function(x){x + fillSecondary + f$data}), 1:30))
-
-
-# FLRFL total CH4
-addDataFrame(x = flrfl.total.ch4.state.type,  
-             sheet = sheets[]$`7.3.1_FLRFL_totCh4`, # pull name from list
-             row.names = FALSE, col.names = FALSE,
-             startRow = 6, startColumn = 1,
-             colStyle = setNames(cslist,3:numberCol))
-addDataFrame(x = flrfl.total.ch4.state.type %>% select_if(~is.numeric(.)) %>%
-               # https://stackoverflow.com/questions/28873057/sum-across-multiple-columns-with-dplyr
-               summarise(across(everything(), ~sum(., is.na(.), 0))),  # col sums
-             sheet = sheets[]$`7.3.1_FLRFL_totCh4`, # names are weird, pull from list
-             row.names = FALSE, col.names = FALSE,
-             startRow = nrow(flrfl.total.ch4.state.type) + 6, # +6 space on top
-             startColumn = 3, # start under first numeric column
-             colStyle = setNames(lapply(cslist, function(x){x + fillSecondary + f$data}), 1:30))
-
-
-# LCFL area
-addDataFrame(x = lcfl.area.state.type,  
-             sheet = sheets[]$`7.3.2_LCFL_area`,
-             row.names = FALSE, col.names = FALSE,
-             startRow = 6, startColumn = 1,
-             colStyle = setNames(cslist,3:numberCol))
-addDataFrame(x = lcfl.area.state.type %>% select_if(~is.numeric(.)) %>%
-               # https://stackoverflow.com/questions/28873057/sum-across-multiple-columns-with-dplyr
-               summarise(across(everything(), ~sum(., is.na(.), 0))),  # col sums
-             sheet = sheets[]$`7.3.2_LCFL_area`, # names are weird, pull from list
-             row.names = FALSE, col.names = FALSE,
-             startRow = nrow(lcfl.area.state.type) + 6, # +6 space on top
-             startColumn = 3, # start under first numeric column
-             colStyle = setNames(lapply(cslist, function(x){x + fillSecondary + f$data}), 1:30))
-
-
-# LCFL downstream CH4
-addDataFrame(x = lcfl.dn.ch4.state.type,  
-             sheet = sheets[]$`7.3.2_LCFL_dnCh4`, # pull name from list
-             row.names = FALSE, col.names = FALSE,
-             startRow = 6, startColumn = 1,
-             colStyle = setNames(cslist,3:numberCol))
-addDataFrame(x = lcfl.dn.ch4.state.type %>% select_if(~is.numeric(.)) %>%
-               # https://stackoverflow.com/questions/28873057/sum-across-multiple-columns-with-dplyr
-               summarise(across(everything(), ~sum(., is.na(.), 0))),  # col sums
-             sheet = sheets[]$`7.3.2_LCFL_dnCh4`, # names are weird, pull from list
-             row.names = FALSE, col.names = FALSE,
-             startRow = nrow(lcfl.dn.ch4.state.type) + 6, # +6 space on top
-             startColumn = 3, # start under first numeric column
-             colStyle = setNames(lapply(cslist, function(x){x + fillSecondary + f$data}), 1:30))
-
-# LCFL surface CH4
-addDataFrame(x = lcfl.surface.ch4.state.type,  
-             sheet = sheets[]$`7.3.2_LCFL_surfCh4`, # pull name from list
-             row.names = FALSE, col.names = FALSE,
-             startRow = 6, startColumn = 1,
-             colStyle = setNames(cslist,3:numberCol))
-addDataFrame(x = lcfl.surface.ch4.state.type %>% select_if(~is.numeric(.)) %>%
-               # https://stackoverflow.com/questions/28873057/sum-across-multiple-columns-with-dplyr
-               summarise(across(everything(), ~sum(., is.na(.), 0))),  # col sums
-             sheet = sheets[]$`7.3.2_LCFL_surfCh4`, # names are weird, pull from list
-             row.names = FALSE, col.names = FALSE,
-             startRow = nrow(lcfl.surface.ch4.state.type) + 6, # +6 space on top
-             startColumn = 3, # start under first numeric column
-             colStyle = setNames(lapply(cslist, function(x){x + fillSecondary + f$data}), 1:30))
-
-
-# LCFL total CH4
-addDataFrame(x = lcfl.total.ch4.state.type,  
-             sheet = sheets[]$`7.3.2_LCFL_totCh4`, # pull name from list
-             row.names = FALSE, col.names = FALSE,
-             startRow = 6, startColumn = 1,
-             colStyle = setNames(cslist, 3:numberCol))
-
-addDataFrame(x = lcfl.total.ch4.state.type %>% select_if(~is.numeric(.)) %>%
-               # https://stackoverflow.com/questions/28873057/sum-across-multiple-columns-with-dplyr
-               summarise(across(everything(), ~sum(., is.na(.), 0))),  # col sums
-               sheet = sheets[]$`7.3.2_LCFL_totCh4`, # names are weird, pull from list
-             row.names = FALSE, col.names = FALSE,
-             startRow = nrow(lcfl.total.ch4.state.type) + 6, # +6 space on top
-             startColumn = 3, # start under first numeric column
-             colStyle = setNames(lapply(cslist, function(x){x + fillSecondary + f$data}), 1:30)
-)
-
-
-# LCFL CO2
-addDataFrame(x = lcfl.co2.state.type,  
-             sheet = sheets[]$`7.3.2_LCFL_Co2`, # pull name from list
-             row.names = FALSE, col.names = FALSE,
-             startRow = 6, startColumn = 1,
-             colStyle = setNames(cslist,3:numberCol))
-
-addDataFrame(x = lcfl.co2.state.type %>% select_if(~is.numeric(.)) %>%
-               # https://stackoverflow.com/questions/28873057/sum-across-multiple-columns-with-dplyr
-               summarise(across(everything(), ~sum(., is.na(.), 0))),  # col sums
-             sheet = sheets[]$`7.3.2_LCFL_Co2`, # names are weird, pull from list
-             row.names = FALSE, col.names = FALSE,
-             startRow = nrow(lcfl.co2.state.type) + 6, #  +6 space on top
-             startColumn = 3, # start under first numeric column
-             colStyle = setNames(lapply(cslist, function(x){x + fillSecondary + f$data}), 1:30)
-)
-
-
-
-#setForceFormulaRecalculation(wb,"data",TRUE)
-wb.nat$setForceFormulaRecalculation(TRUE)
-saveWorkbook(wb.nat, file.nat)
-
-
-
-# MORE STUFF--------------
 
 ```
 
