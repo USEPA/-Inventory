@@ -345,6 +345,7 @@ full.state.type.grid <- expand.grid(types, state.names$name) %>%
 
 
 ##### All Flooded Land Surface Area and EFs by state, climate, type, subtype, and lu
+This is written out to state specific tabs in Excel file.  See 'Write to Excel' section.
 ```{r}
 # First, write surface area and emission factor data to Excel for each state
 # per Tom's request.
@@ -354,7 +355,7 @@ fl.cl.area <- lapply(fl.e, function(x) {
   # calculate area by state
   x %>% 
     st_drop_geometry() %>%
-    dplyr::group_by(lu, subtype, name, climate) %>% # 
+    dplyr::group_by(lu, subtype, name, climate) %>% # name = state
     summarize(area = sum(area_ha_new))  %>% # sum by group
     mutate(area = replace(area, is.na(area), 0),  # replace NA with 0
            type = ifelse(subtype %in% c("reservoir", "inundation area"), # restore type column
@@ -600,7 +601,7 @@ openxlsx::saveWorkbook(wb, file, overwrite = TRUE) ## save changes to excel
 
 
 ### DEPRECATED------------------------
-### Code for writing outnationally aggregated data to Excel.  This output is
+### Code for writing out nationally aggregated data to Excel.  This output is
 ### not required per Wirth.  Also, code written with xlsx package which
 ### can give memory issues.  Keeping this code around for now, but may delete
 ### later.
@@ -869,7 +870,7 @@ us.plot.flrfl.total.ch4.2020.reservoir <- merge(us.plot,
 ggplot(us.plot.flrfl.total.ch4.2020.reservoir) +
   geom_sf(aes(fill = ch4.total.ktonnes.y)) +
   scale_fill_distiller(expression(kt~CH[4]~y^-1), 
-                       palette = "Blues", direction = -1) +
+                       palette = "Blues", direction = 1) +
   coord_sf(datum = NA) + # this removes grid lines.
   theme(panel.background = element_blank())
 
@@ -902,17 +903,10 @@ fl.e$`2020` %>%
 
 ```
 
-
-
-#### Methodology
-Flooded land age was determined from data in the NID when available (`r dplyr::bind_rows(nav, inund, res) %>% st_drop_geometry() %>% filter(!is.na(YEAR_COMPLETED)) %>% summarize(total.n = n()) %>% pull()` out of `r dplyr::bind_rows(nav, inund, res) %>% st_drop_geometry() %>% summarize(total.n = n()) %>% pull()`).  
-
-
-
-#####surface are of Oahe and Saskawea
+#####Oahe and Saskawea: surface area and CH4 flux
 ```{r}
 # Notably, this was the case for Lakes Sakakawea Oahe in North Dakota and South Dakota border.  Combined, these two reservoirs have a surface area in excess of 
-fl.e[[1]] %>%  
+fl.e[[1]] %>%  # 1990
   st_drop_geometry() %>% 
   filter(lu == "Land Converted to Flooded Land",
          COMID %in% c(19251179, 21543470, 21541960, 
@@ -920,7 +914,30 @@ fl.e[[1]] %>%
   distinct(area_ha_original) %>% # area repeated due to multipolygons from interstection with state
   summarize(area.tot = sum(.)/1000000) %>%
   pull() # million hectares
+
+# What year did they transfer into FLRFL
+fl.e[[1]] %>%  # 1990
+  st_drop_geometry() %>% 
+  filter(lu == "Land Converted to Flooded Land",
+         COMID %in% c(19251179, 21543470, 21541960, 
+                      21529608, 21539872,120048827)) %>% # Oahe, Saskawea, Saskawea inundation area
+  select(YEAR_COMPLETED) %>%
+  mutate(year_to_flrfl = YEAR_COMPLETED + 21)
+
+fl.e[[31]] %>%  #2020
+  st_drop_geometry() %>% 
+  filter(lu == "Flooded Land Remaining Flooded Land",
+         COMID %in% c(19251179, 21543470, 21541960, 
+                      21529608, 21539872,120048827)) %>% # Oahe, Saskawea, Saskawea inundation area
+  summarize(ch4.total.ktonnes.y = sum(ch4.total.tonnes.y)/1000) %>%
+  pull() # 15.27
+
+15.27/(749-688) * 100 #25% of total increase from 1990 to 2005 due to these reservoirs
 ```
+
+
+#### Methodology
+Flooded land age was determined from data in the NID when available (`r dplyr::bind_rows(nav, inund, res) %>% st_drop_geometry() %>% filter(!is.na(YEAR_COMPLETED)) %>% summarize(total.n = n()) %>% pull()` out of `r dplyr::bind_rows(nav, inund, res) %>% st_drop_geometry() %>% summarize(total.n = n()) %>% pull()`).  
 
 
 #####surface are of reservoirs created between 1990 and 2000
@@ -961,7 +978,7 @@ filter(type == "reservoir",
 ```
 
 #### Other Constructed Waterbodies (Freshwater Ponds, Saline Ponds, Canals and Ditches)
-In 2019 the conterminous United States hosted `r fl.cl.area.state.type %>% filter(lu == "Flooded Land Remaining Flooded Land", type == "other constructed waterbodies") %>% group_by(subtype) %>% summarize(tot.area = sum(area2019))`  hectares of freshwater pond and `canals and ditches` surface area, respectively, in the Flooded Land Remaining Flooded Land category.    
+In 2019 the conterminous United States hosted `r fl.cl.area.state.type %>% filter(lu == "Flooded Land Remaining Flooded Land", type == "other constructed waterbodies") %>% group_by(subtype) %>% summarize(tot.area = sum(area2020))`  hectares of freshwater pond and `canals and ditches` surface area, respectively, in the Flooded Land Remaining Flooded Land category.    
 
 ##### Emissions and Removals from Flooded Land Remaining Flooded Land - Other Constructed Waterbodies
 ###### TABLE:: National level CH4 flux table
@@ -1033,7 +1050,7 @@ us.plot.flrfl.total.ch4.2020.ocwb <- merge(us.plot,
 p1 <- ggplot(us.plot.flrfl.total.ch4.2020.ocwb) +
   geom_sf(aes(fill = `canals and ditches`)) +
   scale_fill_distiller(expression(kt~CH[4]~y^-1), 
-                       palette = "Blues", direction = -1) +
+                       palette = "Blues", direction = 1) +
   coord_sf(datum = NA) + # this removes grid lines.
   ggtitle(expression(A.~CH[4]~Flux~from~Canals~and~Ditches)) +
   theme(panel.background = element_blank(),
@@ -1044,7 +1061,7 @@ p1 <- ggplot(us.plot.flrfl.total.ch4.2020.ocwb) +
 p2 <- ggplot(us.plot.flrfl.total.ch4.2020.ocwb) +
   geom_sf(aes(fill = `freshwater pond`)) +
   scale_fill_distiller(expression(kt~CH[4]~y^-1), 
-                       palette = "Blues", direction = -1) +
+                       palette = "Blues", direction = 1) +
   coord_sf(datum = NA) + # this removes grid lines.
   ggtitle(expression(B.~CH[4]~Flux~from~Freshwater~Ponds)) +
   theme(panel.background = element_blank(),
@@ -1098,7 +1115,7 @@ p1 <- ggplot(us.plot.flrfl.area.2020.ocwb) +
   geom_sf(aes(fill = `canals and ditches`)) +
   scale_fill_distiller("hectares", 
                        labels=function(x) format(x, big.mark = ",", scientific = FALSE),
-                       palette = "Blues", direction = -1) +
+                       palette = "Blues", direction = 1) +
   coord_sf(datum = NA) + # this removes grid lines.
   ggtitle(expression(A.~Area~of~Canals~and~Ditches)) +
   theme(panel.background = element_blank(),
@@ -1110,7 +1127,7 @@ p2 <- ggplot(us.plot.flrfl.area.2020.ocwb) +
   geom_sf(aes(fill = `freshwater pond`)) +
   scale_fill_distiller("hectares", 
                        labels=function(x) format(x, big.mark = ",", scientific = FALSE),
-                       palette = "Blues", direction = -1) +
+                       palette = "Blues", direction = 1) +
   coord_sf(datum = NA) + # this removes grid lines.
   ggtitle(expression(B.~Area~of~Freshwater~Ponds)) +
   theme(panel.background = element_blank(),
@@ -1137,7 +1154,7 @@ filter(type == "other constructed waterbodies",
 ```
 ###Land Converted to Flooded Land
 ####Emissions and Removals from Land Converted to Flooded Land - Reservoirs
-In 2020 the conterminous United States hosted `r fl.cl.area.state.type %>% filter(lu == "Land Converted to Flooded Land", type == "reservoir") %>% select(area2020) %>% summarize(tot.area = sum(area2020)) %>% pull()` hectares of reservoirs in the Flooded Land Remaining Flooded Land category.  These reservoirs are distributed across the `r fl.e[[1]] %>% st_drop_geometry() %>% filter(lu == "Land Converted to Flooded Land", type == "reservoir") %>% summarize(climate.zones = length(unique(climate))) %>% pull()`.
+In 2020 the conterminous United States hosted `r fl.cl.area.state.type %>% filter(lu == "Land Converted to Flooded Land", type == "reservoir") %>% select(area2020) %>% summarize(tot.area = sum(area2020)) %>% pull()` hectares of reservoirs in the Flooded Land Remaining Flooded Land category.  These reservoirs are distributed across the `r fl.e[[31]] %>% st_drop_geometry() %>% filter(lu == "Land Converted to Flooded Land", type == "reservoir") %>% summarize(climate.zones = length(unique(climate))) %>% pull()`.
 
 #####Climate zone and Flooded lands map
 ```{r}
@@ -1188,7 +1205,7 @@ us.plot.lcfl.ghg.2020.reservoir <- merge(us.plot,
 p1 <- ggplot(us.plot.lcfl.ghg.2020.reservoir) +
   geom_sf(aes(fill = ch4.total.ktonnes.y)) +
   scale_fill_distiller(expression(kt~CH[4]~y^-1), 
-                       palette = "Blues", direction = -1) +
+                       palette = "Blues", direction = 1) +
   coord_sf(datum = NA) + # this removes grid lines.
   ggtitle(expression(A.~CH[4]~Flux~from~Reservoirs~and~Inundation~Areas)) +
   theme(panel.background = element_blank(),
@@ -1198,7 +1215,7 @@ p1 <- ggplot(us.plot.lcfl.ghg.2020.reservoir) +
 p2 <- ggplot(us.plot.lcfl.ghg.2020.reservoir) +
   geom_sf(aes(fill = co2.ktonnes.y)) +
   scale_fill_distiller(expression(kt~CO[2]~y^-1), 
-                       palette = "Blues", direction = -1) +
+                       palette = "Blues", direction = 1) +
   coord_sf(datum = NA) + # this removes grid lines.
   ggtitle(expression(B.~CO[2]~Flux~from~Reservoirs~and~Inundation~Areas)) +
   theme(panel.background = element_blank(),
@@ -1275,6 +1292,15 @@ fl.e[[1]] %>%
   distinct(area_ha_original) %>% # area repeated due to multipolygons from interstection with state
   summarize(area.tot = sum(.)/1000000) %>%
   pull() # million hectares
+
+# What year did they transfer into FLRFL
+fl.e[[1]] %>%  # 1990
+  st_drop_geometry() %>% 
+  filter(lu == "Land Converted to Flooded Land",
+         COMID %in% c(19251179, 21543470, 21541960, 
+                      21529608, 21539872,120048827)) %>% # Oahe, Saskawea, Saskawea inundation area
+  select(YEAR_COMPLETED) %>%
+  mutate(year_to_flrfl = YEAR_COMPLETED + 21)
 ```
 
 #####TABLE:: National Flooded Land Area for Reservoirs and Inundation Areas in LCFL
@@ -1450,7 +1476,7 @@ us.plot.lcfl.total.ghg.2020.ocwb <- merge(us.plot,
 p1 <- ggplot(us.plot.lcfl.total.ghg.2020.ocwb) +
   geom_sf(aes(fill = `co2.tonnes.y_freshwater pond`)) +
   scale_fill_distiller(expression(tonnes~CO[2]~Eq.~y^-1), 
-                       palette = "Blues", direction = -1) +
+                       palette = "Blues", direction = 1) +
   coord_sf(datum = NA) + # this removes grid lines.
   ggtitle(expression(~A.~CO[2]~Flux~from~Freshwater~Ponds)) +
   theme(panel.background = element_blank(),
@@ -1461,7 +1487,7 @@ p1 <- ggplot(us.plot.lcfl.total.ghg.2020.ocwb) +
 p2 <- ggplot(us.plot.lcfl.total.ghg.2020.ocwb) +
   geom_sf(aes(fill = `ch4.total.tonnes.co2.eq.y_freshwater pond`)) +
   scale_fill_distiller(expression(tonnes~CO[2]~Eq.~y^-1), 
-                       palette = "Blues", direction = -1) +
+                       palette = "Blues", direction = 1) +
   coord_sf(datum = NA) + # this removes grid lines.
   ggtitle(expression(B.~CH[4]~Flux~from~Freshwater~Ponds)) +
   theme(panel.background = element_blank(),
@@ -1521,7 +1547,7 @@ ggplot(us.plot.lcfl.area.2020.ocwb) +
   geom_sf(aes(fill = `freshwater pond`)) +
   scale_fill_distiller("hectares", 
                        labels=function(x) format(x, big.mark = ",", scientific = FALSE),
-                       palette = "Blues", direction = -1) +
+                       palette = "Blues", direction = 1) +
   coord_sf(datum = NA) + # this removes grid lines.
   ggtitle(expression(~Area~of~Freshwater~Ponds)) +
   theme(panel.background = element_blank(),
@@ -1621,7 +1647,7 @@ ef.error <- readxl::read_excel("inputData/defaultEmissionFactors.xlsx") %>%
   # of total emissions to not include the mean.  Here I'm expanding the CI
   # of the EF to force symmetry around mean.
   # Calculating CH4 emission factor standard deviation from 95% CI and n reported in guidance.
-  # This will allow paramter distribution to be defined using rnorm, the preferred IPCC method.
+  # This will allow parameter distribution to be defined using rnorm, the preferred IPCC method.
   # No N reported for CO2, so using uniform distribution.
   # https://stats.stackexchange.com/questions/30402/how-to-calculate-mean-and-standard-deviation-in-r-given-confidence-interval-and
   mutate(ch4.tonnes.ha.y.upr = replace(ch4.tonnes.ha.y.upr, 
@@ -1632,7 +1658,7 @@ ef.error <- readxl::read_excel("inputData/defaultEmissionFactors.xlsx") %>%
 # record nrow of fl list prior to merge.  Should be identical after merge.
 n.row.prior <- nrow(fl$`2020`) #55597
 
-# Merge emission factors with each list element.  This takes a few minutes
+# Merge emission factors with 2020 area inventory.
 fl.error <- merge(fl$`2020`, ef.error)  
 
 # Make sure no records were lost during merge
@@ -1642,7 +1668,7 @@ n.row.prior == nrow(fl.error)
 # Calculate emissions
 fl.error.list <- list()
 set.seed(3452) # make it reproducible
-for (i in 1:1000) { # 1000 simulations takes 50 seconds
+for (i in 1:1000) { # 1000 simulations takes 50 seconds.  10,000 < 10 minutes, but freezes computer
   poo <- fl.error %>% 
     mutate(co2.tonnes.ha.y = runif(nrow(fl.error), co2.tonnes.ha.y.lwr, co2.tonnes.ha.y.upr),
            ch4.tonnes.ha.y = rnorm(nrow(fl.error), mean = ch4.tonnes.ha.y, sd = ch4.sd),
@@ -1669,11 +1695,27 @@ for (i in 1:1000) { # 1000 simulations takes 50 seconds
 ### Table:: Uncertainty
 ```{r}
 # STEP 1:  Sum emissions for each iteration of above simulation
-# about 2 minutes with 1000 simulations
+# about 2 minutes seconds with 1000 simulations, 
 ch4.co2.uncertainty <- lapply(fl.error.list, function(x) {
   x %>% 
     st_drop_geometry() %>%
-    mutate(subtype = ifelse(subtype == "inundation area", # not discriminating inundation and reservoir here
+    # mutate(subtype = ifelse(subtype == "inundation area", # per Wirth, separate inundation and reservoir
+    #                         "reservoir",
+    #                         subtype)) %>%
+    group_by(lu, subtype) %>%
+    summarize(ch4.surface.mmt.co2.eq.y = (sum(ch4.surface.tonnes.y , na.rm = TRUE)/1000000)*25, # surface CH4
+              ch4.dn.mmt.co2.eq.y = (sum(ch4.dn.tonnes.y, na.rm = TRUE)/1000000)*25, # downstream CH4
+              ch4.total.mmt.co2.eq.y = (sum(ch4.total.tonnes.y, na.rm = T)/1000000)*25, # total CH4
+              co2.mmt.co2.eq.y = sum(co2.tonnes.y, na.rm = TRUE)/1000000) %>% # total CO2
+    mutate(ghg.total.mmt.co2.eq.y = co2.mmt.co2.eq.y + ch4.total.mmt.co2.eq.y)
+  })
+
+# Above calculates uncertainty by lu and subtype.  Here we calculate by lu, but aggregate
+# reservoir and inundatation subtype.  This is is needed for 'total' row in table
+ch4.co2.uncertainty.total <- lapply(fl.error.list, function(x) {
+  x %>% 
+    st_drop_geometry() %>%
+    mutate(subtype = ifelse(subtype == "inundation area", # combine for total row
                             "reservoir",
                             subtype)) %>%
     group_by(lu, subtype) %>%
@@ -1684,10 +1726,15 @@ ch4.co2.uncertainty <- lapply(fl.error.list, function(x) {
     mutate(ghg.total.mmt.co2.eq.y = co2.mmt.co2.eq.y + ch4.total.mmt.co2.eq.y)
   })
 
-
 # STEP 2: COLLAPSE LIST INTO DF
 # ch4.co2 uncertainty table
 ch4.co2.uncertainty.table <- ch4.co2.uncertainty %>% 
+  reduce(full_join) %>% # merge all elements of list into single df.
+  group_by(lu, subtype) %>%
+  summarize(across(everything(), list(min = min,
+                                      max = max)))
+
+ch4.co2.uncertainty.table.total <- ch4.co2.uncertainty.total %>% 
   reduce(full_join) %>% # merge all elements of list into single df.
   group_by(lu, subtype) %>%
   summarize(across(everything(), list(min = min,
@@ -1700,6 +1747,22 @@ ch4.co2.uncertainty.table <- ch4.co2.uncertainty %>%
 
 # ch4.co2 mean fluxes
 ch4.co2.mean.table <- fl.e$`2020` %>%  
+  st_drop_geometry() %>%
+  # mutate(subtype = ifelse(subtype == "inundation area", # not discriminating inundation and reservoir here
+  #                         "reservoir",
+  #                         subtype)) %>%
+  select(lu, subtype, ch4.surface.tonnes.y, ch4.dn.tonnes.y, 
+         ch4.total.tonnes.y, co2.tonnes.y) %>%
+  group_by(lu, subtype) %>%
+  summarize(ch4.surface.mmt.co2.eq.y = (sum(ch4.surface.tonnes.y)/1000000)*25, 
+            ch4.dn.mmt.co2.eq.y = (sum(ch4.dn.tonnes.y)/1000000)*25,
+            ch4.total.mmt.co2.eq.y = (sum(ch4.total.tonnes.y)/1000000)*25,
+            co2.mmt.co2.eq.y = sum(co2.tonnes.y)/1000000,
+            ghg.total.mmt.co2.eq.y = co2.mmt.co2.eq.y + ch4.total.mmt.co2.eq.y) 
+
+
+# ch4.co2 mean fluxes total!
+ch4.co2.mean.table.total <- fl.e$`2020` %>%  
   st_drop_geometry() %>%
   mutate(subtype = ifelse(subtype == "inundation area", # not discriminating inundation and reservoir here
                           "reservoir",
@@ -1740,17 +1803,69 @@ ch4.co2.uncertainty.mean.table <- merge(ch4.co2.uncertainty.table, ch4.co2.mean.
                                          ghg.total.mmt.co2.eq.y)) %>%
   relocate(lu, subtype, contains("surface"), contains("dn"), contains("total")) 
 
+
+ch4.co2.uncertainty.mean.table.total <- merge(ch4.co2.uncertainty.table.total, ch4.co2.mean.table.total) %>%
+  mutate(upr.perc.ch4.surface = bound.perc(ch4.surface.mmt.co2.eq.y_max, 
+                                           ch4.surface.mmt.co2.eq.y),
+         lwr.perc.ch4.surface = bound.perc(ch4.surface.mmt.co2.eq.y_min, 
+                                           ch4.surface.mmt.co2.eq.y),
+         upr.perc.ch4.dn = bound.perc(ch4.dn.mmt.co2.eq.y_max, 
+                                           ch4.dn.mmt.co2.eq.y),
+         lwr.perc.ch4.dn = bound.perc(ch4.dn.mmt.co2.eq.y_min, 
+                                           ch4.dn.mmt.co2.eq.y),
+         upr.perc.ch4.total = bound.perc(ch4.total.mmt.co2.eq.y_max, 
+                                           ch4.total.mmt.co2.eq.y),
+         lwr.perc.ch4.total = bound.perc(ch4.total.mmt.co2.eq.y_min, 
+                                           ch4.total.mmt.co2.eq.y),
+         upr.perc.co2 = bound.perc(co2.mmt.co2.eq.y_max, 
+                                           co2.mmt.co2.eq.y),
+         lwr.perc.co2 = bound.perc(co2.mmt.co2.eq.y_min, 
+                                           co2.mmt.co2.eq.y),
+         upr.perc.ghg.total = bound.perc(ghg.total.mmt.co2.eq.y_max,
+                                         ghg.total.mmt.co2.eq.y),
+         lwr.perc.ghg.total = bound.perc(ghg.total.mmt.co2.eq.y_min,
+                                         ghg.total.mmt.co2.eq.y)) %>%
+  relocate(lu, subtype, contains("surface"), contains("dn"), contains("total")) 
+
+
 ###FLRFL TABLE
 # STEP 5: REPORT FOR RESERVOIR TABLE
-ch4.co2.uncertainty.mean.table %>% filter(lu == "Flooded Land Remaining Flooded Land",
-                                          subtype == "reservoir")
+# Reservoir and inundation area part of table
+ch4.co2.uncertainty.mean.table %>% 
+  filter(lu == "Flooded Land Remaining Flooded Land",
+         subtype %in% c("reservoir","inundation area")) %>%
+  pivot_longer(!c("lu", "subtype"), names_to = "flux.name", values_to = "flux") %>%
+  mutate(surf.dn.tot = ifelse(grepl("surface", flux.name),
+                              "surface",
+                              ifelse(grepl("dn", flux.name),
+                                     "downstream",
+                                     ifelse(grepl("tot", flux.name),
+                                            "total",
+                                            ifelse(grepl("co2", flux.name), #Co2 is total, no downstream
+                                                   "total",
+                                                   "oops")))),
+         flux.name = gsub(c(".surface|.dn|.total"), "", flux.name)) %>% 
+  pivot_wider(names_from = flux.name, values_from = flux) %>%
+  select(-contains("ghg"), -starts_with("co2"), -lwr.perc.co2, -upr.perc.co2) %>% # ghg is combined CO2 and CH4.  no CO2 for FLRFL
+  filter(surf.dn.tot != "total") %>%
+  arrange(desc(subtype))
+
+#Total part of table
+ch4.co2.uncertainty.mean.table.total %>% 
+  filter(lu == "Flooded Land Remaining Flooded Land",
+         subtype == "reservoir") %>%
+  select(lu, subtype, contains("total")) %>%
+  select(-contains("ghg"))
+ 
+
 
 # STEP 6: REPORT FOR OTHER CONSTRUCTED WATERBODIES TABLE
 # canals and ditches / freshwater pond rows
 ch4.co2.uncertainty.mean.table %>% 
   filter(lu == "Flooded Land Remaining Flooded Land",
          subtype %in% c("canals and ditches", "freshwater pond")) %>%
-  select(subtype, contains("total"))
+  select(subtype, contains("total")) %>%
+  select(-contains("ghg"))
 
 # total row
 ch4.co2.uncertainty.mean.table %>% 
@@ -1766,10 +1881,37 @@ ch4.co2.uncertainty.mean.table %>%
 
 ###LCFL TABLE
 # REPORT FOR RESERVOIR TABLE
-ch4.co2.uncertainty.mean.table %>% filter(lu == "Land Converted to Flooded Land",
-                                          subtype == "reservoir") %>% 
+# first part of table, dissagregated values
+ch4.co2.uncertainty.mean.table %>% 
+  filter(lu == "Land Converted to Flooded Land",
+         subtype %in% c("reservoir", "inundation area")) %>% 
+  pivot_longer(!c("lu", "subtype"), names_to = "flux.name", values_to = "flux") %>% 
+  filter(!grepl("ch4.total", flux.name)) %>% # not reporting CH4 from dn + surface
+   # distinct(flux.name) %>% print(n=Inf) %>%
+  mutate(surf.dn.tot = ifelse(grepl("surface", flux.name),
+                              "surface",
+                              ifelse(grepl("dn", flux.name),
+                                     "downstream",
+                                     ifelse(grepl("^co2", flux.name), #starts with co2
+                                            "surface",
+                                            ifelse(grepl("ghg", flux.name),
+                                                   "total", #CH4 + CO2
+                                                   #all CO2 are surface
+                                                   ifelse(flux.name %in% c("upr.perc.co2", "lwr.perc.co2"), 
+                                                          "surface",
+                                                         "oops"))))),
+         flux.name = gsub(c(".surface|.dn|.total"), "", flux.name))  %>% # simplify flux name  
+  pivot_wider(names_from = flux.name, values_from = flux) %>%
+  select(-contains("ghg")) %>% # ghg is combined CO2 and CH4.  no CO2 for FLRFL
+  filter(surf.dn.tot != "total") %>%
+  arrange(desc(subtype)) %>%
   write.table(., "clipboard", row.names = FALSE)
 
+# total part of table
+ch4.co2.uncertainty.mean.table.total %>% 
+  filter(lu == "Land Converted to Flooded Land",
+         subtype == "reservoir") %>% # in this object, reservoir == reservoir + inundation
+  select(lu, subtype, contains("ghg"))
 
 # REPORT FOR OTHER CONSTRUCTED WATERBODIES
 ch4.co2.uncertainty.mean.table %>% 

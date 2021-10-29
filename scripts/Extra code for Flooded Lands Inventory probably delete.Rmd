@@ -1,0 +1,316 @@
+---
+title: "Untitled"
+author: "J. Beaulieu"
+date: "9/7/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+summary(cars)
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
+#### Flooded Land area
+
+##### Flooded Land Remaining Flooded Land Area by State and Type
+```{r}
+# Calculate area by state and type
+flrfl.area <- lapply(fl.e, function(x) {
+  # calculate area by state
+  x %>% 
+    st_drop_geometry() %>%
+    filter(lu == "Flooded Land Remaining Flooded Land") %>%
+    dplyr::group_by(type, name) %>% # including climate group creates >6000 rows across all years
+    summarize(area = sum(area_ha_new))  %>% # sum by group
+    full_join(.,full.state.type.grid) %>% # expand to include every state, even if area is NA (which means 0)
+    mutate(area = replace(area, is.na(area), 0)) %>% # replace NA with 0
+    arrange(type, name)
+})
+
+# append calculation year to the name of the area variable
+for (i in 1:length(flrfl.area)) { # for each list element
+  names(flrfl.area[[i]])[names(flrfl.area[[i]]) == "area"] = paste0("area", names(flrfl.area[i])) # combine "area" with list element name (which is calculation year)
+}
+
+# FLRFL area table
+flrfl.area.state.type <- flrfl.area %>% 
+  reduce(full_join) %>% # merge all elements of list into single df.
+  as.data.frame() # remove tibble stuff, messes with writing to excel
+```
+
+##### Land Converted to Flooded Land Area by State and Type
+```{r}
+# Calculate area by state and type
+lcfl.area <- lapply(fl.e, function(x) {
+  # calculate area by state
+  x %>% 
+    st_drop_geometry() %>%
+    filter(lu == "Land Converted to Flooded Land") %>%
+    dplyr::group_by(type, name) %>% # including climate group creates >6000 rows across all years
+    summarize(area = sum(area_ha_new))  %>% # sum by group
+    full_join(.,full.state.type.grid) %>% # expand to include every state, even if area is NA (which means 0)
+    mutate(area = replace(area, is.na(area), 0)) %>% # replace NA with 0
+    arrange(type, name)
+})
+
+# append calculation year to the name of the area variable
+for (i in 1:length(lcfl.area)) { # for each list element
+  names(lcfl.area[[i]])[names(lcfl.area[[i]]) == "area"] = paste0("area", names(lcfl.area[i])) # combine "area" with list element name (which is calculation year)
+}
+
+# LCFL area table
+lcfl.area.state.type <- lcfl.area %>% 
+  reduce(full_join) %>% # merge all elements of list into single df.
+  as.data.frame() # remove tibble stuff, messes with writing to excel
+
+# # Time series of LCFL area
+# # Reservoirs drop rapidly from 1990 - 2000
+# pivot_longer(lcfl.area.state.type,
+#              cols = starts_with("area"),
+#              names_to = "year",
+#              values_to = "area") %>%
+#   mutate(year = as.numeric(substr(x = year, start = 5, stop = 8))) %>%
+#   group_by(year, type) %>%
+#   summarise(area = sum(area)) %>%
+#   ggplot(., aes(year, area)) +
+#   geom_point() +
+#   facet_wrap(~type)
+# 
+# # Driven mostly by North Dakota, Texas, and Missouri
+# pivot_longer(lcfl.area.state.type,
+#              cols = starts_with("area"),
+#              names_to = "year",
+#              values_to = "area") %>%
+#   filter(type == "reservoir") %>%
+#   mutate(year = as.numeric(substr(x = year, start = 5, stop = 8))) %>%
+#   group_by(year, name) %>%
+#   summarise(area = sum(area)) %>%
+#   ggplot(., aes(year, area)) +
+#   geom_point() +
+#   facet_wrap(~name)
+# 
+# # Lake Oahe and Sakakawea
+# fl.e[[1]] %>%
+#   filter(name %in% c("North Dakota", "South Dakota"),
+#          lu == "Land Converted to Flooded Land") %>%
+#   select(COMID, FTYPE, GNIS_NAME_1, YEAR_COMPLETED, area_ha_new, area_ha_original) %>%
+#   arrange(desc(area_ha_original), COMID)
+  
+```
+
+
+
+
+#### Flooded Land CH4
+##### Flooded Land Remaining Flooded Land: Downstream CH4 by State and Type
+```{r}
+# Calculate downstream CH4 emissions by state and type (0 for type != reservoir)
+flrfl.dn.ch4 <- lapply(fl.e, function(x) {
+  x %>% 
+    st_drop_geometry() %>%
+    filter(lu == "Flooded Land Remaining Flooded Land") %>%
+    dplyr::group_by(type, name) %>% # including climate group creates >6000 rows across all years
+    summarize(ch4.dn.tonnes.y = sum(ch4.dn.tonnes.y, na.rm = T))  %>% # sum by group
+    full_join(., full.state.type.grid) %>% # expand to include every state, even if area is NA (which means 0)
+    mutate(ch4.dn.tonnes.y = replace(ch4.dn.tonnes.y, is.na(ch4.dn.tonnes.y), 0)) %>% # replace NA with 0
+    arrange(type, name)
+})
+
+# append calculation year to the name of the area variable
+for (i in 1:length(flrfl.dn.ch4)) { # for each list element
+  names(flrfl.dn.ch4[[i]])[names(flrfl.dn.ch4[[i]]) == "ch4.dn.tonnes.y"] = paste0("ch4.dn.tonnes.y", names(flrfl.dn.ch4[i])) # combine "ch4.dn.tonnes.y" with list element name (which is calculation year)
+}
+
+# FLRFL ch4 downstream emissions table
+flrfl.dn.ch4.state.type <- flrfl.dn.ch4 %>% 
+  reduce(full_join) %>% # merge all elements of list into single df.
+  as.data.frame() %>% # remove tibble stuff, messes with writing to excel
+  filter(type == "reservoir") # zero downstream emissions for other types
+
+
+```
+
+##### Flooded Land Remaining Flooded Land: Surface CH4 by State and Type
+```{r}
+# Calculate surface CH4 emissions by state and type
+flrfl.surface.ch4 <- lapply(fl.e, function(x) {
+  x %>% 
+    st_drop_geometry() %>%
+    filter(lu == "Flooded Land Remaining Flooded Land") %>%
+    dplyr::group_by(type, name) %>% # including climate group creates >6000 rows across all years
+    summarize(ch4.surface.tonnes.y = sum(ch4.surface.tonnes.y, na.rm = T))  %>% # sum by group
+    full_join(., full.state.type.grid) %>% # expand to include every state, even if area is NA (which means 0)
+    mutate(ch4.surface.tonnes.y = replace(ch4.surface.tonnes.y, is.na(ch4.surface.tonnes.y), 0)) %>% # replace NA with 0
+    arrange(type, name)
+})
+
+# append calculation year to the name of the area variable
+for (i in 1:length(flrfl.surface.ch4)) { # for each list element
+  names(flrfl.surface.ch4[[i]])[names(flrfl.surface.ch4[[i]]) == "ch4.surface.tonnes.y"] = paste0("ch4.surface.tonnes.y", names(flrfl.surface.ch4[i])) # combine "ch4.dn.tonnes.y" with list element name (which is calculation year)
+}
+
+# FLRFL ch4 surface emissions table
+flrfl.surface.ch4.state.type <- flrfl.surface.ch4 %>% 
+  reduce(full_join) %>% # merge all elements of list into single df.
+  as.data.frame() # remove tibble stuff, messes with writing to excel
+  
+
+```
+
+##### Flooded Land Remaining Flooded Land: total CH4 by State and Type
+```{r}
+# Calculate total CH4 emissions by state and type
+flrfl.total.ch4 <- lapply(fl.e, function(x) {
+  x %>% 
+    st_drop_geometry() %>%
+    filter(lu == "Flooded Land Remaining Flooded Land") %>%
+    dplyr::group_by(type, name) %>% # including climate group creates >6000 rows across all years
+    summarize(ch4.total.tonnes.y = sum(ch4.total.tonnes.y, na.rm = T))  %>% # sum by group
+    full_join(., full.state.type.grid) %>% # expand to include every state, even if area is NA (which means 0)
+    mutate(ch4.total.tonnes.y = replace(ch4.total.tonnes.y, is.na(ch4.total.tonnes.y), 0)) %>% # replace NA with 0
+    arrange(type, name)
+})
+
+# append calculation year to the name of the area variable
+for (i in 1:length(flrfl.total.ch4)) { # for each list element
+  names(flrfl.total.ch4[[i]])[names(flrfl.total.ch4[[i]]) == "ch4.total.tonnes.y"] = paste0("ch4.total.tonnes.y", names(flrfl.total.ch4[i])) # combine "ch4.dn.tonnes.y" with list element name (which is calculation year)
+}
+
+# FLRFL ch4 total emissions table
+flrfl.total.ch4.state.type <- flrfl.total.ch4 %>% 
+  reduce(full_join) %>% # merge all elements of list into single df.
+  as.data.frame() # remove tibble stuff, messes with writing to excel
+  
+```
+
+
+##### Land Converted to Flooded Land: Downstream CH4 by State and Type
+```{r}
+# Calculate downstream CH4 emissions by state and type (0 for type != reservoir)
+lcfl.dn.ch4 <- lapply(fl.e, function(x) {
+  x %>% 
+    st_drop_geometry() %>%
+    filter(lu == "Land Converted to Flooded Land") %>%
+    dplyr::group_by(type, name) %>% # including climate group creates >6000 rows across all years
+    summarize(ch4.dn.tonnes.y = sum(ch4.dn.tonnes.y, na.rm = T))  %>% # sum by group
+    full_join(., full.state.type.grid) %>% # expand to include every state, even if area is NA (which means 0)
+    mutate(ch4.dn.tonnes.y = replace(ch4.dn.tonnes.y, is.na(ch4.dn.tonnes.y), 0)) %>% # replace NA with 0
+    arrange(type, name)
+})
+
+# append calculation year to the name of the area variable
+for (i in 1:length(lcfl.dn.ch4)) { # for each list element
+  names(lcfl.dn.ch4[[i]])[names(lcfl.dn.ch4[[i]]) == "ch4.dn.tonnes.y"] = paste0("ch4.dn.tonnes.y", names(lcfl.dn.ch4[i])) # combine "ch4.dn.tonnes.y" with list element name (which is calculation year)
+}
+
+# lcfl ch4 downstream emissions table
+lcfl.dn.ch4.state.type <- lcfl.dn.ch4 %>% 
+  reduce(full_join) %>% # merge all elements of list into single df.
+  as.data.frame() %>% # remove tibble stuff, messes with writing to excel
+  filter(type == "reservoir") # zero downstream emissions for other types
+
+
+```
+
+##### Land Converted to Flooded Land: Surface CH4 by State and Type
+```{r}
+# Calculate surface CH4 emissions by state and type
+lcfl.surface.ch4 <- lapply(fl.e, function(x) {
+  x %>% 
+    st_drop_geometry() %>%
+    filter(lu == "Land Converted to Flooded Land") %>%
+    dplyr::group_by(type, name) %>% # including climate group creates >6000 rows across all years
+    summarize(ch4.surface.tonnes.y = sum(ch4.surface.tonnes.y, na.rm = T))  %>% # sum by group
+    full_join(., full.state.type.grid) %>% # expand to include every state, even if area is NA (which means 0)
+    mutate(ch4.surface.tonnes.y = replace(ch4.surface.tonnes.y, is.na(ch4.surface.tonnes.y), 0)) %>% # replace NA with 0
+    arrange(type, name)
+})
+
+# append calculation year to the name of the area variable
+for (i in 1:length(lcfl.surface.ch4)) { # for each list element
+  names(lcfl.surface.ch4[[i]])[names(lcfl.surface.ch4[[i]]) == "ch4.surface.tonnes.y"] = paste0("ch4.surface.tonnes.y", names(lcfl.surface.ch4[i])) # combine "ch4.dn.tonnes.y" with list element name (which is calculation year)
+}
+
+# lcfl ch4 surface emissions table
+lcfl.surface.ch4.state.type <- lcfl.surface.ch4 %>% 
+  reduce(full_join) %>% # merge all elements of list into single df.
+  as.data.frame() # remove tibble stuff, messes with writing to excel
+
+
+```
+
+##### Land Converted to Flooded Land: total CH4 by State and Type
+```{r}
+# Calculate surface CH4 emissions by state and type
+lcfl.total.ch4 <- lapply(fl.e, function(x) {
+  x %>% 
+    st_drop_geometry() %>%
+    filter(lu == "Land Converted to Flooded Land") %>%
+    dplyr::group_by(type, name) %>% # including climate group creates >6000 rows across all years
+    summarize(ch4.total.tonnes.y = sum(ch4.total.tonnes.y, na.rm = T))  %>% # sum by group
+    full_join(., full.state.type.grid) %>% # expand to include every state, even if area is NA (which means 0)
+    mutate(ch4.total.tonnes.y = replace(ch4.total.tonnes.y, is.na(ch4.total.tonnes.y), 0)) %>% # replace NA with 0
+    arrange(type, name)
+})
+
+# append calculation year to the name of the area variable
+for (i in 1:length(lcfl.total.ch4)) { # for each list element
+  names(lcfl.total.ch4[[i]])[names(lcfl.total.ch4[[i]]) == "ch4.total.tonnes.y"] = paste0("ch4.total.tonnes.y", names(lcfl.total.ch4[i])) # combine "ch4.dn.tonnes.y" with list element name (which is calculation year)
+}
+
+# lcfl ch4 total emissions table
+lcfl.total.ch4.state.type <- lcfl.total.ch4 %>% 
+  reduce(full_join) %>% # merge all elements of list into single df.
+  as.data.frame() %>% # remove tibble stuff, messes with writing to excel
+  filter(type != 'canals and ditches') # no guidance for canals and ditches
+  
+```
+
+#### Flooded Land CO2
+This is only calculated for LCFL.  No downstream component calculated.
+
+##### Land Converted to Flooded Land: Surface CO2 by State and Type
+```{r}
+# Calculate surface CO2 emissions by state and type
+lcfl.co2 <- lapply(fl.e, function(x) {
+  x %>% 
+    st_drop_geometry() %>%
+    filter(lu == "Land Converted to Flooded Land") %>%
+    dplyr::group_by(type, name) %>% # including climate group creates >6000 rows across all years
+    summarize(co2.tonnes.y = sum(co2.tonnes.y, na.rm = T))  %>% # sum by group
+    full_join(., full.state.type.grid) %>% # expand to include every state, even if area is NA (which means 0)
+    mutate(co2.tonnes.y = replace(co2.tonnes.y, is.na(co2.tonnes.y), 0)) %>% # replace NA with 0
+    arrange(type, name)
+})
+
+# append calculation year to the name of the area variable
+for (i in 1:length(lcfl.co2)) { # for each list element
+  names(lcfl.co2[[i]])[names(lcfl.co2[[i]]) == "co2.tonnes.y"] = paste0("co2.tonnes.y", names(lcfl.co2[i])) # combine "co2.dn.tonnes.y" with list element name (which is calculation year)
+}
+
+# lcfl co2 surface emissions table
+lcfl.co2.state.type <- lcfl.co2 %>% 
+  reduce(full_join) %>% # merge all elements of list into single df.
+  as.data.frame() %>% # remove tibble stuff, messes with writing to excel
+  filter(type %in% c("reservoir", "freshwater pond")) # no methodology for other types
+```
+
