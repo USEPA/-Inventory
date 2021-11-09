@@ -1052,7 +1052,7 @@ p1 <- ggplot(us.plot.flrfl.total.ch4.2020.ocwb) +
   scale_fill_distiller(expression(kt~CH[4]~y^-1), 
                        palette = "Blues", direction = 1) +
   coord_sf(datum = NA) + # this removes grid lines.
-  ggtitle(expression(A.~CH[4]~Flux~from~Canals~and~Ditches)) +
+  ggtitle(expression(A.~CH[4]~Emissions~from~Canals~and~Ditches)) +
   theme(panel.background = element_blank(),
         title = element_text(size = 8))
 
@@ -1063,7 +1063,7 @@ p2 <- ggplot(us.plot.flrfl.total.ch4.2020.ocwb) +
   scale_fill_distiller(expression(kt~CH[4]~y^-1), 
                        palette = "Blues", direction = 1) +
   coord_sf(datum = NA) + # this removes grid lines.
-  ggtitle(expression(B.~CH[4]~Flux~from~Freshwater~Ponds)) +
+  ggtitle(expression(B.~CH[4]~Emissions~from~Freshwater~Ponds)) +
   theme(panel.background = element_blank(),
         title = element_text(size = 8))
 
@@ -1478,7 +1478,7 @@ p1 <- ggplot(us.plot.lcfl.total.ghg.2020.ocwb) +
   scale_fill_distiller(expression(tonnes~CO[2]~Eq.~y^-1), 
                        palette = "Blues", direction = 1) +
   coord_sf(datum = NA) + # this removes grid lines.
-  ggtitle(expression(~A.~CO[2]~Flux~from~Freshwater~Ponds)) +
+  ggtitle(expression(~A.~CO[2]~Emissions~from~Freshwater~Ponds)) +
   theme(panel.background = element_blank(),
         title = element_text(size = 8))
 
@@ -1489,7 +1489,7 @@ p2 <- ggplot(us.plot.lcfl.total.ghg.2020.ocwb) +
   scale_fill_distiller(expression(tonnes~CO[2]~Eq.~y^-1), 
                        palette = "Blues", direction = 1) +
   coord_sf(datum = NA) + # this removes grid lines.
-  ggtitle(expression(B.~CH[4]~Flux~from~Freshwater~Ponds)) +
+  ggtitle(expression(B.~CH[4]~Emissions~from~Freshwater~Ponds)) +
   theme(panel.background = element_blank(),
         title = element_text(size = 8))
 
@@ -1656,16 +1656,46 @@ ef.error <- readxl::read_excel("inputData/defaultEmissionFactors.xlsx") %>%
          ch4.sd = ((ch4.tonnes.ha.y.upr - ch4.tonnes.ha.y)/sqrt(n.ch4)) * 1.96)
 
 # record nrow of fl list prior to merge.  Should be identical after merge.
-n.row.prior <- nrow(fl$`2020`) #55597
+n.row.prior <- lapply(fl[c("1990", "2020")], nrow) #55137 and 55597
 
 # Merge emission factors with 2020 area inventory.
-fl.error <- merge(fl$`2020`, ef.error)  
+fl.error <- lapply(fl[c("1990", "2020")], function(x) {
+  merge(st_drop_geometry(x), ef.error)  # lose geometry to reduce memory
+})
 
 # Make sure no records were lost during merge
 # LOOKS GOOD
-n.row.prior == nrow(fl.error)
+unlist(n.row.prior) == unlist(lapply(fl.error, nrow))
 
 # Calculate emissions
+
+###PICK UP HERE.  ADD 1990 DATA!!!
+fl.error.1990 <- list()
+fl.error.2020 <- list()
+set.seed(3452) # make it reproducible
+for (i in 1:1000) { # 1000 simulations takes 2 mintus50 seconds.  10,000 < 10 minutes, but freezes computer
+  poo <- lapply(fl.error, function(x) { x %>%
+    mutate(co2.tonnes.ha.y = runif(nrow(x), co2.tonnes.ha.y.lwr, co2.tonnes.ha.y.upr),
+           ch4.tonnes.ha.y = rnorm(nrow(x), mean = ch4.tonnes.ha.y, sd = ch4.sd),
+           # using rlnorm for downstream, see above.  mean of 0.085 needed to get lower
+           # confidence interval less than mean estimate.  true mean is 0.09
+           dn.ef = rlnorm(nrow(x), meanlog = log(0.085), sdlog = log(1.5)),
+           area_ha_new = runif(nrow(x), #15% error in area
+                               min = area_ha_new - (area_ha_new*0.15), 
+                               max = area_ha_new + (area_ha_new*0.15)),
+           co2.tonnes.y = area_ha_new * co2.tonnes.ha.y,
+           ch4.surface.tonnes.y = area_ha_new * ch4.tonnes.ha.y,
+           ch4.dn.tonnes.y = ifelse(type == "other constructed waterbodies", # no DN for 'other'
+                                    0,
+                                    ch4.surface.tonnes.y * dn.ef),
+           ch4.total.tonnes.y = ch4.surface.tonnes.y + ch4.dn.tonnes.y)
+  })
+  fl.error.1990[[i]] <- poo$`1990`
+  fl.error.2020[[i]] <- poo$`2020`
+}
+
+
+
 fl.error.list <- list()
 set.seed(3452) # make it reproducible
 for (i in 1:1000) { # 1000 simulations takes 50 seconds.  10,000 < 10 minutes, but freezes computer
@@ -1688,14 +1718,18 @@ for (i in 1:1000) { # 1000 simulations takes 50 seconds.  10,000 < 10 minutes, b
   fl.error.list[[i]] <- poo
 }
 
-
+# Warning message:
+# Problem with `mutate()` column `co2.tonnes.ha.y`.
+# i `co2.tonnes.ha.y = runif(nrow(fl.error), co2.tonnes.ha.y.lwr, co2.tonnes.ha.y.upr)`.
+# i NAs produced
+# expected because ef.error contains NA values for co2.tonnes.ha.y.lwr and co2.tonnes.ha.y.upr
 ```
 
 
 ### Table:: Uncertainty
 ```{r}
 # STEP 1:  Sum emissions for each iteration of above simulation
-# about 2 minutes seconds with 1000 simulations, 
+# about 2 minutes with 1000 simulations, 
 ch4.co2.uncertainty <- lapply(fl.error.list, function(x) {
   x %>% 
     st_drop_geometry() %>%
